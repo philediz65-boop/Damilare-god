@@ -2,7 +2,7 @@ import os,re,threading,requests,time,io,json,concurrent.futures
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from flask import Flask
-from telegram import InlineKeyboardButton,InlineKeyboardMarkup
+from telegram import InlineKeyboardButton,InlineKeyboardMarkup,BotCommand
 from telegram.ext import ApplicationBuilder,CommandHandler,CallbackQueryHandler,MessageHandler,filters
 from datetime import datetime, date
 BOT_TOKEN=os.getenv("BOT_TOKEN","").strip()
@@ -54,7 +54,7 @@ FAST_COINS={"PEPE","BONK","WIF","BOME","FLOKI","SHIB","DOGE","SOL","AVAX","SUI",
 FAST_LIST=["SOL","DOGE","PEPE","BONK","WIF","BOME","FLOKI","SHIB","AVAX","SUI","ARB","OP","APT","TAO","NOT","JUP","ENA","FARTCOIN"]
 SLOW_LIST=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG"]
 @app.get("/")
-def home(): return "💀 SKELLY'S BOT V8.1 FAST/SLOW MENU LIVE",200
+def home(): return "💀 SKELLY'S BOT V8.2 TELEGRAM MENU LIVE",200
 @app.get("/health")
 def health(): return "OK",200
 def fmt(v):
@@ -199,7 +199,6 @@ def coins_kb_perfect(active_override=None, view="ALL"):
     else:
         btns.append([InlineKeyboardButton(f"🔍 💀 SCAN BEST MASTER - Trade {daily['trades']+1}/3 Today 💪 🔥",callback_data="SCAN_BEST")])
         btns.append([InlineKeyboardButton(f"📊 💰 Daily: {daily['wins']}W/{daily['losses']}L P&L ${daily['pnl']:.2f} 💰 📈",callback_data="SHOW_DAILY")])
-    # FAST / SLOW MENU SELECTOR
     btns.append([InlineKeyboardButton("⚡ 🚀 FAST MENU",callback_data="MENU_FAST"), InlineKeyboardButton("🐢 💎 SLOW MENU",callback_data="MENU_SLOW"), InlineKeyboardButton("📋 ALL",callback_data="MENU_ALL")])
     if view=="FAST" or view=="ALL":
         btns.append([InlineKeyboardButton("--- ⚡ 🚀 FAST 18 GOD 💀 SKELLY'S BOT ---",callback_data="IGNORE")])
@@ -218,9 +217,105 @@ def coins_kb_perfect(active_override=None, view="ALL"):
     btns.append([InlineKeyboardButton("🏆 ✨ XAUUSD GOLD LIVE 💛 💰 ✨",callback_data="C_PAXG")])
     btns.append([InlineKeyboardButton("🔙 💀 Back to Main Menu 🏠",callback_data="MENU_ALL")])
     return InlineKeyboardMarkup(btns)
+
+async def setup_menu(app):
+    try:
+        commands=[
+            BotCommand("start","💀 🏠 Main Menu - SKELLY'S BOT"),
+            BotCommand("fast","⚡ 🚀 FAST 18 Coins - Quick Profit"),
+            BotCommand("slow","🐢 💎 SLOW 16 Coins - Good Result"),
+            BotCommand("all","📋 💀 ALL Coins - Fast + Slow"),
+            BotCommand("scan","🔍 💀 SCAN BEST Coin Now"),
+            BotCommand("daily","📊 💰 Daily P&L Report"),
+            BotCommand("monitor","📡 👀 Check Active Trade Live"),
+            BotCommand("close","❌ 🚫 Close Active Trade"),
+            BotCommand("fartcoin","💩 FARTCOIN - Meme King"),
+            BotCommand("sui","💧 SUI - Fast L1"),
+        ]
+        await app.bot.set_my_commands(commands)
+        print("✅ Telegram Menu Commands Set - SKELLY'S BOT")
+    except Exception as e:
+        print(f"Menu setup error {e}")
+
 async def start(u,c):
     save_chat_id(u.message.chat.id)
-    await u.message.reply_text("💀 🔥 *💀 SKELLY'S BOT V8.1 FAST/SLOW MENU LIVE* 🔥 💀\n\n✅ 💀 SKELLY'S BOT Title + Emoji Everywhere ✅\n✅ ⚡ FAST MENU / 🐢 SLOW MENU Selector Added ✅\n✅ 📊 Conf % + Balanced BUY/SELL ✅\n✅ 💩 FARTCOIN + 💧 SUI + 🪐 JUP + 🌊 ENA + 🧢 WIF ✅\n✅ 🛡️ SAFE SL + 🎯 TP1/2/3 + 🔒 4 Exchanges ✅\n\n👇 💀 Select FAST or SLOW Menu Below! 💀 👇",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text("💀 🔥 *💀 SKELLY'S BOT V8.2 TELEGRAM MENU LIVE* 🔥 💀\n\n✅ 💀 Now with Telegram Menu Button! Click ☰ Menu below! ✅\n✅ ⚡ /fast = FAST 18 | 🐢 /slow = SLOW 16 | 📋 /all = ALL ✅\n✅ 📊 Confidence % + Balanced BUY/SELL ✅\n✅ 💩 FARTCOIN + 💧 SUI + 🪐 JUP + 🌊 ENA + 🧢 WIF ✅\n✅ 🛡️ SAFE SL + 🎯 TP1/2/3 + 🔒 4 Exchanges ✅\n\n👇 💀 Click ☰ Menu or Select Below! 💀 👇",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+async def fast_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    await u.message.reply_text("⚡ 🚀 *FAST 18 MENU* 💀 SKELLY'S BOT 💀\n\n💨 Fast moving meme + alt coins for quick profit! 💰",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def slow_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    await u.message.reply_text("🐢 💎 *SLOW 16 MENU* 💀 SKELLY'S BOT 💀\n\n🐢 Slow stable coins for good result! 🛡️",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
+async def all_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    await u.message.reply_text("📋 💀 *ALL COINS MENU* 💀 SKELLY'S BOT 💀\n\n⚡ FAST 18 + 🐢 SLOW 16 + 🏆 GOLD 💛",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+async def scan_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    daily=get_daily(); btc=get_btc_trend()
+    await u.message.reply_text("🔍 💀 SKELLY'S BOT Scanning 18 BEST coins 💀 for FAST PROFIT 💪 💰 🔥...")
+    best=None; best_score=-10000
+    scan_list=["SOL","DOGE","PEPE","BONK","WIF","AVAX","SUI","ARB","OP","BTC","ETH","XRP","JUP","ENA","TAO","NOT","BOME","FARTCOIN"]
+    def scan_one(code):
+        try: return analyze_perfect(code, btc, strict_vol=False)
+        except: return {"error":True}
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+            futures={ex.submit(scan_one, c): c for c in scan_list}
+            for fut in concurrent.futures.as_completed(futures, timeout=15):
+                try:
+                    r=fut.result(timeout=3)
+                except: continue
+                if r.get("error"): continue
+                score=r.get("conf",0) + r.get("vol_pct",0)
+                if score>best_score: best_score=score; best=r
+    except Exception as e:
+        print(f"Scan err {e}")
+    if not best:
+        r=analyze_perfect("SOL", btc, strict_vol=False)
+        if not r.get("error"): best=r
+    if not best:
+        await u.message.reply_text("❌ 😭 No setup now - Try /fast or /slow 💪 💀 SKELLY'S BOT 💀",reply_markup=coins_kb_perfect(view="ALL")); return
+    r=best
+    active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"time":str(datetime.now())}
+    set_active(active_data)
+    buf=generate_chart_perfect(r)
+    lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
+    loss5=5*sl_lev/100; p5_1=5*tp1_lev/100; p5_2=5*tp2_lev/100; p5_3=5*tp3_lev/100
+    emoji="🟢 🚀 💀 BUY LONG 💹 💰 🔥" if r['dir']=="BUY" else "🔴 📉 💀 SELL SHORT 💥 💸 🥶"
+    txt=(f"💀 *💀 SKELLY'S BOT: {r['code']} Trade {daily['trades']+1}/3 - V8.2 {r['conf']}%* {emoji}\n\n💰 💵 {r['code']} {r['dir']} @ {fmt(r['entry'])} LIVE SAFE 🛡️ 💀\n"
+         f"🎯 💚 TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p5_1:.2f}) FAST ⚡\n"
+         f"🎯 💛 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p5_2:.2f}) GOOD 👍\n"
+         f"🚀 💜 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p5_3:.2f}) MOON 🌕 🚀\n"
+         f"🛑 🚨 SL SAFE {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss5:.2f}) WIDE 🛡️\n"
+         f"📊 🤓 Conf {r['conf']}% | 🏆 Win {r['win_est']}% | {r['vol_txt']} OK ✅\n{r['mtf_txt']}\n{r['trend_txt']} | 📈 RSI {r['rsi']:.0f} 🤓\n\n💥 💣 LEVERAGE {lev}x SAFE 🛡️\n📡 👁️ Bot go monitor TP1/TP2/TP3 every 60s! ✅ ⏰")
+    kb=coins_kb_perfect(active_data,view="ALL")
+    if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
+    else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
+async def daily_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    daily=get_daily()
+    await u.message.reply_text(f"📊 💀 *SKELLY'S BOT Daily Report* 💀 📊\n📅 Date: {daily['date']} 📆\n🏆 Wins: {daily['wins']} ✅ | 😢 Losses: {daily['losses']} ❌ | 🔢 Trades: {daily['trades']}/3 🎯\n💰 P&L: ${daily['pnl']:.2f} 💸📈\n\n💪 Keep grinding boss! 💀🔥",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+async def monitor_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    active=get_active()
+    if not active or active.get("status")!="OPEN":
+        await u.message.reply_text("❌ 💔 No active trade 😭 - Click /fast /slow to start! 💀 SKELLY'S BOT 💀",reply_markup=coins_kb_perfect(view="ALL")); return
+    coin=active.get("coin"); entry=active.get("entry"); sl=active.get("sl"); tp1=active.get("tp1"); tp2=active.get("tp2"); tp3=active.get("tp3"); dir_=active.get("dir")
+    price=get_price_now(CRYPTO.get(coin))
+    if not price: price=entry
+    lev=25
+    if dir_=="BUY": live_pnl_pct=(price-entry)/entry*100*lev
+    else: live_pnl_pct=(entry-price)/entry*100*lev
+    live_pnl=5*live_pnl_pct/100; status="💚 💰 PROFIT 😍" if live_pnl_pct>=0 else "❤️ 💸 LOSS 😭"
+    emoji="🟢 🚀 💀 BUY LONG 💹 💰 🔥" if dir_=="BUY" else "🔴 📉 💀 SELL SHORT 💥 💸 🥶"
+    txt=(f"📡 💀 *SKELLY'S BOT MONITORING {coin} {emoji} {active.get('conf',0)}%* 💀 📡\n\n💰 💵 Entry {fmt(entry)} 💵 | 📈 📊 Now {fmt(price)} LIVE 🔴\n🛑 🚨 SL {fmt(sl)} SAFE WIDE 🛡️\n🎯 💚 TP1 {fmt(tp1)} | 🎯 💛 TP2 {fmt(tp2)} | 🚀 💜 TP3 {fmt(tp3)}\n💥 💣 Live P&L: {live_pnl_pct:.2f}% Lev {lev}x: $5 -> {'+' if live_pnl>=0 else ''}${live_pnl:.2f} {status}\n✅ 🛡️ SAFE SL + 🔒 🔗 4 Ex LIVE! 💀\n🤖 👁️ Bot dey monitor TP1/TP2/TP3 every 60s! 🙏 ⏰")
+    await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL"))
+async def close_cmd(u,c):
+    save_chat_id(u.message.chat.id)
+    active=get_active()
+    if active: clear_active(); await u.message.reply_text(f"✅ 💀 Closed {active.get('coin')} 🗑️ - Ready for new 💪 😎 SAFE trade! 💀 SKELLY'S BOT 💀",reply_markup=coins_kb_perfect(view="ALL"))
+    else: await u.message.reply_text("❌ 💔 No active trade 😕",reply_markup=coins_kb_perfect(view="ALL"))
+
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); d=q.data
     if d=="IGNORE": return
@@ -283,7 +378,7 @@ async def btn_handler(u,c):
         lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
         loss5=5*sl_lev/100; p5_1=5*tp1_lev/100; p5_2=5*tp2_lev/100; p5_3=5*tp3_lev/100
         emoji="🟢 🚀 💀 BUY LONG 💹 💰 🔥" if r['dir']=="BUY" else "🔴 📉 💀 SELL SHORT 💥 💸 🥶"
-        txt=(f"💀 *💀 SKELLY'S BOT: {r['code']} Trade {daily['trades']+1}/3 - V8.1 {r['conf']}%* {emoji}\n\n💰 💵 {r['code']} {r['dir']} @ {fmt(r['entry'])} LIVE SAFE 🛡️ 💀\n"
+        txt=(f"💀 *💀 SKELLY'S BOT: {r['code']} Trade {daily['trades']+1}/3 - V8.2 {r['conf']}%* {emoji}\n\n💰 💵 {r['code']} {r['dir']} @ {fmt(r['entry'])} LIVE SAFE 🛡️ 💀\n"
              f"🎯 💚 TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p5_1:.2f}) FAST ⚡\n"
              f"🎯 💛 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p5_2:.2f}) GOOD 👍\n"
              f"🚀 💜 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p5_3:.2f}) MOON 🌕 🚀\n"
@@ -318,7 +413,7 @@ async def btn_handler(u,c):
 async def txt_handler(u,c):
     code=clean(u.message.text.strip())
     if code not in CRYPTO:
-        await u.message.reply_text("❌ 🤷 Unknown coin - Use menu boss 💪 💀 SKELLY'S BOT 💀",reply_markup=coins_kb_perfect(view="ALL")); return
+        await u.message.reply_text("❌ 🤷 Unknown coin - Use ☰ Menu or buttons boss 💪 💀 SKELLY'S BOT 💀",reply_markup=coins_kb_perfect(view="ALL")); return
     btc=get_btc_trend(); r=analyze_perfect(code, btc, strict_vol=True)
     if r.get("error"):
         await u.message.reply_text(f"{r.get('msg')} 💔 😭",reply_markup=coins_kb_perfect(view="ALL")); return
@@ -330,7 +425,7 @@ async def txt_handler(u,c):
     if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
     else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 def monitor_loop():
-    print("💀 SKELLY'S BOT V8.1 FAST/SLOW MENU monitor started")
+    print("💀 SKELLY'S BOT V8.2 MENU monitor started")
     while True:
         try:
             time.sleep(60)
@@ -379,11 +474,20 @@ def monitor_loop():
 def run_flask(): app.run(host="0.0.0.0",port=PORT)
 def run_bot():
     if not BOT_TOKEN: print("BOT_TOKEN missing"); return
-    a=ApplicationBuilder().token(BOT_TOKEN).build()
+    a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start))
+    a.add_handler(CommandHandler("fast",fast_cmd))
+    a.add_handler(CommandHandler("slow",slow_cmd))
+    a.add_handler(CommandHandler("all",all_cmd))
+    a.add_handler(CommandHandler("scan",scan_cmd))
+    a.add_handler(CommandHandler("daily",daily_cmd))
+    a.add_handler(CommandHandler("monitor",monitor_cmd))
+    a.add_handler(CommandHandler("close",close_cmd))
+    a.add_handler(CommandHandler("fartcoin",lambda u,c: u.message.reply_text("💩 FARTCOIN coming...", reply_markup=coins_kb_perfect(view="FAST"))))
+    a.add_handler(CommandHandler("sui",lambda u,c: u.message.reply_text("💧 SUI coming...", reply_markup=coins_kb_perfect(view="FAST"))))
     a.add_handler(CallbackQueryHandler(btn_handler))
     a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, txt_handler))
-    print("Bot 💀 SKELLY'S BOT V8.1 FAST/SLOW MENU starting..."); a.run_polling(drop_pending_updates=True)
+    print("Bot 💀 SKELLY'S BOT V8.2 TELEGRAM MENU starting..."); a.run_polling(drop_pending_updates=True)
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
     threading.Thread(target=monitor_loop,daemon=True).start()
