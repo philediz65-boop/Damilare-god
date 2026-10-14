@@ -1,3 +1,6 @@
-python-telegram-bot
-Flask
-requests
+python-telegram-bot==20.7
+Flask==2.3.3
+requests==2.31.0
+matplotlib==3.8.2
+numpy==1.26.2
+pillow==10.1.0
