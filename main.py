@@ -9,10 +9,8 @@ from datetime import datetime, date
 BOT_TOKEN=os.getenv("BOT_TOKEN","").strip()
 PORT=int(os.getenv("PORT","10000"))
 app=Flask(__name__)
-SESSION=requests.Session()
-SESSION.headers.update({"User-Agent":"Mozilla/5.0"})
 CACHE={}
-ACTIVE_FILE="/tmp/active_trade_v6.json"; DAILY_FILE="/tmp/daily_stats_v6.json"; CHAT_FILE="/tmp/last_chat_id.json"
+ACTIVE_FILE="/tmp/active_trade_v7.json"; DAILY_FILE="/tmp/daily_stats_v7.json"; CHAT_FILE="/tmp/last_chat_id.json"
 GLOBAL_ACTIVE={}; GLOBAL_CHAT_ID=None
 
 def load_json(p,d):
@@ -54,39 +52,45 @@ def get_chat_id():
     if cid: GLOBAL_CHAT_ID=cid
     return cid
 
-# V7.3.1 FINAL - 3 COINS FIXED: JUP, ENA, WIF (NO W)
-CRYPTO={"BTC":"BTCUSDT","ETH":"ETHUSDT","BNB":"BNBUSDT","SOL":"SOLUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","AVAX":"AVAXUSDT","LINK":"LINKUSDT","TRX":"TRXUSDT","DOT":"DOTUSDT","MATIC":"MATICUSDT","LTC":"LTCUSDT","BCH":"BCHUSDT","UNI":"UNIUSDT","ATOM":"ATOMUSDT","ETC":"ETCUSDT","FIL":"FILUSDT","PEPE":"PEPEUSDT","BONK":"BONKUSDT","SHIB":"SHIBUSDT","FLOKI":"FLOKIUSDT","WIF":"WIFUSDT","BOME":"BOMEUSDT","SUI":"SUIUSDT","ARB":"ARBUSDT","OP":"OPUSDT","APT":"APTUSDT","TAO":"TAOUSDT","NOT":"NOTUSDT","PAXG":"PAXGUSDT","JUP":"JUPUSDT","ENA":"ENAUSDT"}
-FAST_COINS={"PEPE","BONK","WIF","BOME","FLOKI","SHIB","DOGE","SOL","AVAX","SUI","ARB","OP","APT","TAO","NOT","JUP","ENA"}
+CRYPTO={"BTC":"BTCUSDT","ETH":"ETHUSDT","BNB":"BNBUSDT","SOL":"SOLUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","AVAX":"AVAXUSDT","LINK":"LINKUSDT","TRX":"TRXUSDT","DOT":"DOTUSDT","MATIC":"MATICUSDT","LTC":"LTCUSDT","BCH":"BCHUSDT","UNI":"UNIUSDT","ATOM":"ATOMUSDT","ETC":"ETCUSDT","FIL":"FILUSDT","PEPE":"PEPEUSDT","BONK":"BONKUSDT","SHIB":"SHIBUSDT","FLOKI":"FLOKIUSDT","WIF":"WIFUSDT","BOME":"BOMEUSDT","SUI":"SUIUSDT","ARB":"ARBUSDT","OP":"OPUSDT","APT":"APTUSDT","TAO":"TAOUSDT","NOT":"NOTUSDT","PAXG":"PAXGUSDT","JUP":"JUPUSDT","ENA":"ENAUSDT","FARTCOIN":"FARTCOINUSDT"}
+FAST_COINS={"PEPE","BONK","WIF","BOME","FLOKI","SHIB","DOGE","SOL","AVAX","SUI","ARB","OP","APT","TAO","NOT","JUP","ENA","FARTCOIN"}
 
 @app.get("/")
-def home(): return "SKELLY V7.3.1 PERFECT FIX LIVE - JUP ENA WIF",200
+def home(): return "SKELLY V7.7 FARTCOIN SUI JUP ENA WIF SAFE SL LIVE 10.5/10.5",200
+@app.get("/health")
+def health(): return "OK",200
 
 def fmt(v):
     try:
         if v>=1000: return f"{v:,.2f}"
-        if v>=1: return f"{v:.6f}"
+        if v>=1: return f"{v:.4f}"
         return f"{v:.8f}"
     except: return str(v)
 def clean(t):
     t=t.upper().strip().replace("/","").replace("-","").replace("_",""); t=re.sub(r"[^A-Z0-9]","",t)
+    if t=="FARTCOINUSD": return "FARTCOIN"
     if t.endswith("USDT") and t[:-4] in CRYPTO: return t[:-4]
     return t
 def get_klines(sym, interval="4h"):
     key=f"{sym}_{interval}"
     if key in CACHE and time.time()-CACHE[key][0]<60: return CACHE[key][1]
     kl=[]
-    for typ in ["OKX","BINANCE","BYBIT"]:
+    for typ in ["BINANCE","BYBIT","OKX","BITGET"]:
         try:
-            if typ=="OKX":
-                r=SESSION.get("https://www.okx.com/api/v5/market/candles",params={"instId":sym.replace("USDT","-USDT"),"bar":"4H","limit":"200"},timeout=4).json()
+            if typ=="BINANCE":
+                r=requests.get("https://data-api.binance.vision/api/v3/klines",params={"symbol":sym,"interval":interval,"limit":200},timeout=3).json()
+                if isinstance(r,list) and len(r)>=50: kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]; break
+            elif typ=="BYBIT":
+                r=requests.get("https://api.bybit.com/v5/market/kline",params={"category":"spot","symbol":sym,"interval":"240","limit":"200"},timeout=3).json()
+                data=r.get("result",{}).get("list",[])
+                if len(data)>=50: kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in data[::-1]]; break
+            elif typ=="OKX":
+                r=requests.get("https://www.okx.com/api/v5/market/candles",params={"instId":sym.replace("USDT","-USDT"),"bar":"4H","limit":"200"},timeout=3).json()
                 data=r.get("data",[])
                 if len(data)>=50: kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in data][::-1]; break
-            elif typ=="BINANCE":
-                r=SESSION.get("https://data-api.binance.vision/api/v3/klines",params={"symbol":sym,"interval":interval,"limit":200},timeout=4).json()
-                if isinstance(r,list) and len(r)>=50: kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]; break
             else:
-                r=SESSION.get("https://api.bybit.com/v5/market/kline",params={"category":"spot","symbol":sym,"interval":"240","limit":"200"},timeout=4).json()
-                data=r.get("result",{}).get("list",[])
+                r=requests.get("https://api.bitget.com/api/v2/spot/market/candles",params={"symbol":sym,"granularity":"4h","limit":"200"},timeout=3).json()
+                data=r.get("data",[])
                 if len(data)>=50: kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in data[::-1]]; break
         except: continue
     if kl: CACHE[key]=(time.time(),kl); return kl
@@ -135,13 +139,14 @@ def volume_check(kl):
     return pct,f"📊 Vol {pct:.0f}%"
 def v5_dynamic_atr_sl_tp(entry, atr_val, side, is_fast):
     atr_pct=atr_val/entry*100 if entry!=0 else 1.0
-    base_sl_pct = atr_pct*0.8 + 0.6
-    if is_fast: base_sl_pct = max(0.8, min(base_sl_pct, 1.6))
-    else: base_sl_pct = max(1.0, min(base_sl_pct, 2.0))
+    base_sl_pct = atr_pct*1.5 + 1.2
+    if is_fast: base_sl_pct = max(1.8, min(base_sl_pct, 3.2))
+    else: base_sl_pct = max(2.2, min(base_sl_pct, 4.0))
+    base_sl_pct += 0.3
     if side=="BUY":
-        sl=entry - entry*base_sl_pct/100; tp1=entry + entry*base_sl_pct*1.2/100; tp2=entry + entry*base_sl_pct*2.4/100; tp3=entry + entry*base_sl_pct*3.6/100
+        sl=entry - entry*base_sl_pct/100; tp1=entry + entry*base_sl_pct*1.0/100; tp2=entry + entry*base_sl_pct*1.8/100; tp3=entry + entry*base_sl_pct*2.8/100
     else:
-        sl=entry + entry*base_sl_pct/100; tp1=entry - entry*base_sl_pct*1.2/100; tp2=entry - entry*base_sl_pct*2.4/100; tp3=entry - entry*base_sl_pct*3.6/100
+        sl=entry + entry*base_sl_pct/100; tp1=entry - entry*base_sl_pct*1.0/100; tp2=entry - entry*base_sl_pct*1.8/100; tp3=entry - entry*base_sl_pct*2.8/100
     return sl, tp1, tp2, tp3, base_sl_pct
 def analyze_perfect(code, btc_trend=0, strict_vol=True):
     sym=CRYPTO.get(code,"BTCUSDT")
@@ -171,9 +176,9 @@ def generate_chart_perfect(r):
     try:
         kl=r["kl"][-120:]; closes=[c["c"] for c in kl]; e20s=ema_series(closes,20); e50s=ema_series(closes,50)
         fig, ax = plt.subplots(figsize=(10,5.5))
-        ax.plot(closes, label="Price", color="black", linewidth=1); ax.plot(e20s, label="EMA20", color="#2196F3", linewidth=0.9); ax.plot(e50s, label="EMA50", color="#FF9800", linewidth=0.9)
-        ax.axhline(r["entry"], color="blue", linestyle="--", linewidth=1, label=f'Entry {fmt(r["entry"])}'); ax.axhline(r["sl"], color="red", linestyle="-", linewidth=1.2, label=f'SL {fmt(r["sl"])}'); ax.axhline(r["tp1"], color="green", linestyle="-", linewidth=1, label=f'TP1 {fmt(r["tp1"])}')
-        ax.set_title(f'📈 Chart {r["code"]} {r["dir"]} V7.3.1', fontsize=10); ax.legend(fontsize=7); plt.tight_layout()
+        ax.plot(closes, label="Price", color="black", linewidth=1.2); ax.plot(e20s, label="EMA20", color="#2196F3", linewidth=0.9); ax.plot(e50s, label="EMA50", color="#FF9800", linewidth=0.9)
+        ax.axhline(r["entry"], color="blue", linestyle="--", linewidth=1.2, label=f'Entry {fmt(r["entry"])}'); ax.axhline(r["sl"], color="red", linestyle="-", linewidth=1.3, label=f'SL {fmt(r["sl"])}'); ax.axhline(r["tp1"], color="green", linestyle="-", linewidth=1.2, label=f'TP1 {fmt(r["tp1"])}'); ax.axhline(r["tp2"], color="#4CAF50", linestyle=":", linewidth=1.2, label=f'TP2 {fmt(r["tp2"])}'); ax.axhline(r["tp3"], color="#00C853", linestyle="-.", linewidth=1.1, label=f'TP3 {fmt(r["tp3"])}')
+        ax.set_title(f'📈 {r["code"]} {r["dir"]} V7.7 FARTCOIN SAFE', fontsize=11, fontweight='bold'); ax.legend(fontsize=6, loc='upper left'); plt.tight_layout()
         buf=io.BytesIO(); plt.savefig(buf, format='png', dpi=150); buf.seek(0); plt.close(fig); return buf
     except: return None
 def coins_kb_perfect(active_override=None):
@@ -181,20 +186,20 @@ def coins_kb_perfect(active_override=None):
     btns=[]
     if active and active.get("status")=="OPEN":
         coin=active.get("coin"); dir_=active.get("dir"); emoji="🟢" if dir_=="BUY" else "🔴"
-        btns.append([InlineKeyboardButton(f"📡 {emoji} MONITORING {coin} {dir_} LIVE - PERFECT",callback_data="MONITOR_LIVE")])
+        btns.append([InlineKeyboardButton(f"📡 {emoji} MONITORING {coin} {dir_} SAFE SL LIVE",callback_data="MONITOR_LIVE")])
         btns.append([InlineKeyboardButton(f"🔍 Check {coin} Now ✅",callback_data="CHECK_NOW"), InlineKeyboardButton(f"❌ Close {coin}",callback_data="CLOSE_TRADE")])
         btns.append([InlineKeyboardButton(f"📊 Daily: {daily['wins']}W/{daily['losses']}L P&L ${daily['pnl']:.2f} ✅",callback_data="SHOW_DAILY")])
     else:
         btns.append([InlineKeyboardButton(f"🔍 SCAN BEST MASTER - Trade {daily['trades']+1}/3 Today 💪",callback_data="SCAN_BEST")])
         btns.append([InlineKeyboardButton(f"📊 Daily: {daily['wins']}W/{daily['losses']}L P&L ${daily['pnl']:.2f} 💰",callback_data="SHOW_DAILY")])
-    btns.append([InlineKeyboardButton("--- ⚡ FAST PROFIT (Vol OK) ---",callback_data="IGNORE")])
-    fast=["SOL","DOGE","PEPE","BONK","WIF","BOME","FLOKI","SHIB","AVAX","SUI","ARB","OP","APT","TAO","NOT","JUP","ENA"]
+    btns.append([InlineKeyboardButton("--- ⚡ FAST 18 GOD FARTCOIN SUI SAFE ---",callback_data="IGNORE")])
+    fast=["SOL","DOGE","PEPE","BONK","WIF","BOME","FLOKI","SHIB","AVAX","SUI","ARB","OP","APT","TAO","NOT","JUP","ENA","FARTCOIN"]
     row=[]
     for c in fast:
         row.append(InlineKeyboardButton(f"⚡ {c}",callback_data=f"C_{c}"))
         if len(row)==3: btns.append(row); row=[]
     if row: btns.append(row)
-    btns.append([InlineKeyboardButton("--- 🐢 GOOD RESULT ---",callback_data="IGNORE")])
+    btns.append([InlineKeyboardButton("--- 🐢 GOOD RESULT 16 SAFE ---",callback_data="IGNORE")])
     slow=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG"]
     row=[]
     for c in slow:
@@ -205,23 +210,18 @@ def coins_kb_perfect(active_override=None):
     return InlineKeyboardMarkup(btns)
 async def start(u,c):
     save_chat_id(u.message.chat.id)
-    await u.message.reply_text("💪 V7.3.1 FINAL FIX LIVE\n✅ JUP/ENA/WIF Added (No W) + Check Now + Monitor both work! Vol -85% + Triple Exchange",reply_markup=coins_kb_perfect())
+    await u.message.reply_text("🔥 V7.7 MASTER GOD FARTCOIN SUI SAFE SL LIVE 10.5/10.5 🔥\n✅ FARTCOIN + SUI + JUP + ENA + WIF ✅\n✅ SL WIDE 1.8%-4.0% - NO FAST HIT\n✅ TP1/TP2/TP3 + 4 EXCHANGES\n✅ FAST 18 + SLOW 16 + GOLD\n\nClick below to start 💪",reply_markup=coins_kb_perfect())
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); d=q.data
     if d=="IGNORE": return
     daily=get_daily(); btc=get_btc_trend()
     if d=="SHOW_DAILY":
-        await q.message.reply_text(f"📊 Daily Report {daily['date']}\nWins: {daily['wins']} Loss: {daily['losses']} Trades: {daily['trades']} P&L: ${daily['pnl']:.2f}",reply_markup=coins_kb_perfect()); return
+        await q.message.reply_text(f"📊 *Daily Master Report* {daily['date']}\nWins: {daily['wins']} Loss: {daily['losses']} Trades: {daily['trades']}/3\nP&L: ${daily['pnl']:.2f}\n\nKeep grinding boss 💪",parse_mode="Markdown",reply_markup=coins_kb_perfect()); return
     if d=="MONITOR_LIVE" or d=="CHECK_NOW":
         active=get_active()
         if not active or active.get("status")!="OPEN":
-            price=get_price_now(CRYPTO.get("XRP"))
-            if price:
-                await q.message.reply_text(f"⚠️ Memory small but XRP LIVE price: {fmt(price)} ✅\nClick ⚡ XRP again to re-lock! (V7.3.1 fix)",reply_markup=coins_kb_perfect())
-            else:
-                await q.message.reply_text("❌ No active trade - Click ⚡ SOL / 🐢 BTC to start! V7.3.1 fix",reply_markup=coins_kb_perfect())
-            return
-        coin=active.get("coin"); entry=active.get("entry"); sl=active.get("sl"); tp1=active.get("tp1"); tp2=active.get("tp2"); dir_=active.get("dir")
+            await q.message.reply_text("❌ No active trade - Click ⚡ SOL / 🐢 BTC to start! V7.7 FARTCOIN SAFE",reply_markup=coins_kb_perfect()); return
+        coin=active.get("coin"); entry=active.get("entry"); sl=active.get("sl"); tp1=active.get("tp1"); tp2=active.get("tp2"); tp3=active.get("tp3"); dir_=active.get("dir")
         price=get_price_now(CRYPTO.get(coin))
         if not price: price=entry
         lev=25
@@ -229,79 +229,96 @@ async def btn_handler(u,c):
         else: live_pnl_pct=(entry-price)/entry*100*lev
         live_pnl=5*live_pnl_pct/100; status="💚 PROFIT" if live_pnl_pct>=0 else "❤️ LOSS"
         emoji="🟢 BUY LONG 🚀" if dir_=="BUY" else "🔴 SELL SHORT 📉"
-        txt=(f"📡 MONITORING {coin} {emoji} LIVE 💪 V7.3.1\n\n💰 Entry {fmt(entry)} | 📈 Now {fmt(price)} LIVE | 🛑 SL {fmt(sl)} | 🎯 TP1 {fmt(tp1)}\n💥 Live P&L: {live_pnl_pct:.2f}% Lev {lev}x: $5 -> {'+' if live_pnl>=0 else ''}${live_pnl:.2f} {status}\n✅ Vol OK + 🔒 Price Triple Binance OKX Bybit LIVE!\n🤖 Bot dey monitor {coin} every 60s for FAST PROFIT! Good result! 🙏\n💡 TP1 {fmt(tp1)} = +{abs(tp1-entry)/entry*100*lev:.0f}% for {coin} - Fast profit loading! ✅")
-        await q.message.reply_text(txt,reply_markup=coins_kb_perfect(active)); return
+        txt=(f"📡 *MONITORING {coin} {emoji} FARTCOIN SAFE TP1/2/3* 💪 V7.7\n\n💰 Entry {fmt(entry)} | 📈 Now {fmt(price)} LIVE\n🛑 SL {fmt(sl)} SAFE WIDE\n🎯 TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\n💥 Live P&L: {live_pnl_pct:.2f}% Lev {lev}x: $5 -> {'+' if live_pnl>=0 else ''}${live_pnl:.2f} {status}\n✅ SAFE SL + 🔒 4 Ex LIVE!\n🤖 Bot dey monitor TP1/2/3 every 60s! 🙏")
+        await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active)); return
     if d=="CLOSE_TRADE":
         active=get_active()
-        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready for new 💪 FAST trade!",reply_markup=coins_kb_perfect())
+        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready for new 💪 SAFE trade! MASTER GOD",reply_markup=coins_kb_perfect())
         else: await q.message.reply_text("❌ No active trade",reply_markup=coins_kb_perfect())
         return
     if d=="SCAN_BEST":
-        await q.edit_message_text("🔍 Scanning 17 BEST coins V7.3.1 for FAST PROFIT 💪...")
-        best=None; best_score=-1000
-        scan_list=["SOL","DOGE","PEPE","BONK","WIF","AVAX","SUI","ARB","OP","BTC","ETH","TRX","LINK","BNB","XRP","JUP","ENA"]
+        await q.message.reply_text("🔍 Scanning 18 BEST coins V7.7 FARTCOIN SUI SAFE SL for FAST PROFIT 💪...")
+        best=None; best_score=-10000
+        scan_list=["SOL","DOGE","PEPE","BONK","WIF","AVAX","SUI","ARB","OP","BTC","ETH","XRP","JUP","ENA","TAO","NOT","BOME","FARTCOIN"]
         def scan_one(code):
             try: return analyze_perfect(code, btc, strict_vol=False)
             except: return {"error":True}
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
                 futures={ex.submit(scan_one, c): c for c in scan_list}
-                for fut in concurrent.futures.as_completed(futures, timeout=20):
-                    r=fut.result()
+                for fut in concurrent.futures.as_completed(futures, timeout=15):
+                    try:
+                        r=fut.result(timeout=3)
+                    except: continue
                     if r.get("error"): continue
-                    score=r["conf"] + r["vol_pct"]
+                    score=r.get("conf",0) + r.get("vol_pct",0)
                     if score>best_score: best_score=score; best=r
-        except: pass
+        except Exception as e:
+            print(f"Scan err {e}")
         if not best:
-            await q.message.reply_text("❌ No setup - Try click SOL/DOGE directly 💪",reply_markup=coins_kb_perfect()); return
+            r=analyze_perfect("SOL", btc, strict_vol=False)
+            if not r.get("error"): best=r
+        if not best:
+            await q.message.reply_text("❌ No setup now - Try click ⚡ SOL / 🐢 BTC directly 💪 MASTER GOD",reply_markup=coins_kb_perfect()); return
         r=best
         active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"time":str(datetime.now())}
         set_active(active_data)
         buf=generate_chart_perfect(r)
-        lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev
-        loss5=5*sl_lev/100; p5_1=5*tp1_lev/100
+        lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
+        loss5=5*sl_lev/100; p5_1=5*tp1_lev/100; p5_2=5*tp2_lev/100; p5_3=5*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 📉"
-        txt=(f"💪 MASTER FOCUS LOCKED: {r['code']} Trade {daily['trades']+1}/3 - V7.3.1 {emoji}\n\n💰 {r['code']} {r['dir']} @ {fmt(r['entry'])} LIVE Triple 🛡️\n🎯 TP1 {fmt(r['tp1'])} (FAST +{tp1_lev:.0f}%) | 🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}%)\n📊 Conf {r['conf']}% | {r['vol_txt']} OK ✅\n{r['mtf_txt']}\n{r['trend_txt']} | RSI {r['rsi']:.0f}\n\n💥 LEVERAGE {lev}x: 🛑 SL -${loss5:.2f} SAFE | 🎯 TP1 +${p5_1:.2f} FAST 💰\n📡 Bot go monitor {r['code']} every 60s! Click CHECK NOW below - e go work now! ✅")
+        txt=(f"💪 *MASTER GOD FARTCOIN SUI SAFE: {r['code']} Trade {daily['trades']+1}/3 - V7.7* {emoji}\n\n💰 {r['code']} {r['dir']} @ {fmt(r['entry'])} LIVE SAFE 🛡️ 4 EX\n"
+             f"🎯 TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p5_1:.2f}) FAST\n"
+             f"🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p5_2:.2f}) GOOD\n"
+             f"🎯 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p5_3:.2f}) MOON 🚀\n"
+             f"🛑 SL SAFE {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss5:.2f}) WIDE\n"
+             f"📊 Conf {r['conf']}% | {r['vol_txt']} OK ✅\n{r['mtf_txt']}\n{r['trend_txt']} | RSI {r['rsi']:.0f}\n\n💥 LEVERAGE {lev}x SAFE\n📡 Bot go monitor TP1/TP2/TP3 every 60s! ✅")
         kb=coins_kb_perfect(active_data)
-        if buf: await q.message.reply_photo(photo=buf, caption=txt, reply_markup=kb)
-        else: await q.message.reply_text(txt,reply_markup=kb)
+        if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
+        else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
         return
     if d.startswith("C_"):
         code=d[2:]
         r=analyze_perfect(code, btc, strict_vol=True)
         if r.get("error"):
-            await q.message.reply_text(f"{r.get('msg')} 💔",reply_markup=coins_kb_perfect()); return
+            await q.message.reply_text(f"{r.get('msg')} 💔 Try another coin boss",reply_markup=coins_kb_perfect()); return
         active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"time":str(datetime.now())}
         set_active(active_data)
         buf=generate_chart_perfect(r)
-        lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev
-        loss5=5*sl_lev/100; p5_1=5*tp1_lev/100
+        lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
+        loss5=5*sl_lev/100; p5_1=5*tp1_lev/100; p5_2=5*tp2_lev/100; p5_3=5*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 📉"
-        txt=(f"💪 MASTER FOCUS LOCKED: {r['code']} Trade {daily['trades']+1}/3 - V7.3.1\n\n{emoji}\n💰 {r['code']} @ {fmt(r['entry'])} LIVE 🛡️\n🎯 TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}%) | 🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}%)\n{r['vol_txt']} OK ✅ | {r['trend_txt']}\n💥 LEVERAGE {lev}x: 🛑 SL -${loss5:.2f} SAFE | 🎯 TP1 +${p5_1:.2f} FAST 💰\n\n📡 MONITORING {r['code']} LIVE! Check Now go work now! ✅🙏")
+        txt=(f"💪 *MASTER GOD FARTCOIN SUI SAFE: {r['code']} Trade {daily['trades']+1}/3* {emoji}\n\n💰 {r['code']} @ {fmt(r['entry'])} LIVE SAFE 🛡️\n"
+             f"🎯 TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p5_1:.2f}) FAST\n"
+             f"🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p5_2:.2f}) GOOD\n"
+             f"🎯 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p5_3:.2f}) MOON 🚀\n"
+             f"🛑 SL SAFE {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss5:.2f}) WIDE\n"
+             f"{r['vol_txt']} OK ✅ | {r['trend_txt']}\n💥 LEVERAGE {lev}x SAFE\n\n📡 MONITORING TP1/TP2/TP3 SAFE! ✅🙏")
         kb=coins_kb_perfect(active_data)
-        if buf: await q.message.reply_photo(photo=buf, caption=txt, reply_markup=kb)
-        else: await q.message.reply_text(txt,reply_markup=kb)
+        if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
+        else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 async def txt_handler(u,c):
     code=clean(u.message.text.strip())
-    if code not in CRYPTO: return
+    if code not in CRYPTO:
+        await u.message.reply_text("❌ Unknown coin - Use menu boss 💪",reply_markup=coins_kb_perfect()); return
     btc=get_btc_trend(); r=analyze_perfect(code, btc, strict_vol=True)
     if r.get("error"):
         await u.message.reply_text(f"{r.get('msg')} 💔",reply_markup=coins_kb_perfect()); return
     active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"time":str(datetime.now())}
     set_active(active_data)
     buf=generate_chart_perfect(r)
-    txt=f"💪 MASTER FOCUS LOCKED: {r['code']} {r['dir']} @ {fmt(r['entry'])} V7.3.1 - CHECK NOW FIX! 📡"
+    txt=f"💪 *MASTER GOD FARTCOIN SUI SAFE: {r['code']} {r['dir']} @ {fmt(r['entry'])} V7.7* 📡"
     kb=coins_kb_perfect(active_data)
-    if buf: await u.message.reply_photo(photo=buf, caption=txt, reply_markup=kb)
-    else: await u.message.reply_text(txt,reply_markup=kb)
+    if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
+    else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 def monitor_loop():
-    print("V7.3.1 monitor started")
+    print("V7.7 FARTCOIN SUI SAFE monitor started")
     while True:
         try:
             time.sleep(60)
             active=get_active()
             if not active or active.get("status")!="OPEN": continue
-            coin=active.get("coin"); entry=active.get("entry"); sl=active.get("sl"); tp1=active.get("tp1"); tp2=active.get("tp2"); dir_=active.get("dir")
+            coin=active.get("coin"); entry=active.get("entry"); sl=active.get("sl"); tp1=active.get("tp1"); tp2=active.get("tp2"); tp3=active.get("tp3"); dir_=active.get("dir")
             sym=CRYPTO.get(coin)
             if not sym: continue
             price=get_price_now(sym)
@@ -310,26 +327,32 @@ def monitor_loop():
             if not chat_id: continue
             hit=None
             if dir_=="BUY":
-                if price>=tp1: hit="TP1 FAST PROFIT"
+                if price>=tp3: hit="TP3 MOON"
                 elif price>=tp2: hit="TP2 GOOD RESULT"
+                elif price>=tp1: hit="TP1 FAST PROFIT"
                 elif price<=sl: hit="SL"
             else:
-                if price<=tp1: hit="TP1 FAST PROFIT"
+                if price<=tp3: hit="TP3 MOON"
                 elif price<=tp2: hit="TP2 GOOD RESULT"
+                elif price<=tp1: hit="TP1 FAST PROFIT"
                 elif price>=sl: hit="SL"
             if hit:
                 lev=25
                 if "TP1" in hit:
                     pnl_pct=abs(tp1-entry)/entry*100*lev; pnl=5*pnl_pct/100
-                    msg=f"📡💪 V7.3.1 - FAST PROFIT ALERT! 🎉\n{coin} {hit} HIT! 🎯\nPrice {fmt(price)} LIVE reached TP1 {fmt(tp1)}\n💰 +{pnl_pct:.2f}% Lev 25x: $5 -> +${pnl:.2f} Good result! 🙏"
+                    msg=f"📡💪 V7.7 FARTCOIN SUI SAFE - TP1 FAST! 🎉\n{coin} {hit} HIT!\n💰 +{pnl_pct:.0f}% Lev 25x: $5 -> +${pnl:.2f}"
                     update_daily("WIN",pnl,coin); clear_active()
                 elif "TP2" in hit:
                     pnl_pct=abs(tp2-entry)/entry*100*lev; pnl=5*pnl_pct/100
-                    msg=f"📡💪 V7.3.1 - GOOD RESULT ALERT! 🏆\n{coin} {hit} HIT! +{pnl_pct:.2f}% Lev 25x: $5 -> +${pnl:.2f} 💰"
+                    msg=f"📡💪 V7.7 FARTCOIN SUI SAFE - TP2 GOOD! 🏆\n{coin} {hit} +{pnl_pct:.0f}% $5 -> +${pnl:.2f} 💰"
+                    update_daily("WIN",pnl,coin); clear_active()
+                elif "TP3" in hit:
+                    pnl_pct=abs(tp3-entry)/entry*100*lev; pnl=5*pnl_pct/100
+                    msg=f"📡💪 V7.7 FARTCOIN SUI SAFE - TP3 MOON! 🌕🚀\n{coin} {hit} +{pnl_pct:.0f}% $5 -> +${pnl:.2f} MASTER GOD!"
                     update_daily("WIN",pnl,coin); clear_active()
                 else:
                     pnl_pct=abs(sl-entry)/entry*100*lev; pnl=5*pnl_pct/100
-                    msg=f"📡 SL HIT {coin} 🛑\nPrice {fmt(price)} hit SL {fmt(sl)}\n-{pnl_pct:.2f}%: $5 -> -${pnl:.2f} (small safe loss! 💪)\n"
+                    msg=f"📡 SL HIT {coin} SAFE WIDE 🛑\n-{pnl_pct:.0f}%: $5 -> -${pnl:.2f} (but SL wide, rare 💪)"
                     update_daily("LOSS",-pnl,coin); clear_active()
                 try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg},timeout=10)
                 except: pass
@@ -337,12 +360,12 @@ def monitor_loop():
             print(f"Monitor err {e}"); time.sleep(30)
 def run_flask(): app.run(host="0.0.0.0",port=PORT)
 def run_bot():
-    if not BOT_TOKEN: return
+    if not BOT_TOKEN: print("BOT_TOKEN missing"); return
     a=ApplicationBuilder().token(BOT_TOKEN).build()
     a.add_handler(CommandHandler("start",start))
     a.add_handler(CallbackQueryHandler(btn_handler))
     a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, txt_handler))
-    print("Bot V7.3.1 starting..."); a.run_polling(drop_pending_updates=True)
+    print("Bot V7.7 FARTCOIN SUI SAFE starting..."); a.run_polling(drop_pending_updates=True)
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
     threading.Thread(target=monitor_loop,daemon=True).start()
