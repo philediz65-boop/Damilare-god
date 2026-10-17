@@ -17,7 +17,7 @@ CHAT_FILE=f"{DATA_DIR}/last_chat_id.json"
 BACKUP_FILE="./active_backup.json"
 GLOBAL_ACTIVE={}; GLOBAL_CHAT_ID=None
 HEADERS = {"User-Agent":"Mozilla/5.0"}
-print(f"V16.8 FINAL 15m/1H/2H FIXED using {DATA_DIR}")
+print(f"V16.9 FINAL 2.1% $5 using {DATA_DIR}")
 
 def load_json(p,d):
     try:
@@ -82,7 +82,7 @@ FAST_LIST=["SOL","DOGE","PEPE","BONK","WIF","BOME","FLOKI","SHIB","AVAX","SUI","
 SLOW_LIST=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG"]
 
 @app.get("/")
-def home(): return "💀 SKELLY'S BOT V16.8 FINAL 15m/1H/2H",200
+def home(): return "💀 SKELLY'S BOT V16.9 FINAL 2.1% $5",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -202,10 +202,9 @@ def get_liq_hint(kl):
     highs=[k["h"] for k in kl[-20:]]; lows=[k["l"] for k in kl[-20:]]
     return f"💥 Liq UP {fmt(max(highs)*1.02)} | DOWN {fmt(min(lows)*0.98)}"
 
+# === FIXED TO $5 STAKE ===
 def calc_auto_stake(conf, align_score, is_fast):
-    if conf>=88 and align_score==3: return 15.0
-    if conf>=82: return 10.0
-    if conf>=72: return 7.0
+    # V16.9 $5 FIXED - all trades $5
     return 5.0
 
 def ema(arr,p):
@@ -322,6 +321,7 @@ def detect_chart_pattern(kl):
         return "NONE", 0
     except: return "NONE", 0
 
+# === V16.9 FIXED 2.1% TP1, 3.5% TP2, 5.5% TP3 ===
 def v16_scalp_sl_tp(entry, ob, fvg, side, atr_val, is_fast):
     try:
         if ob and ob["side"] == side:
@@ -329,9 +329,10 @@ def v16_scalp_sl_tp(entry, ob, fvg, side, atr_val, is_fast):
         else:
             sl_pct = 1.8 if is_fast else 2.2
             sl = entry - entry*sl_pct/100 if side=="BUY" else entry + entry*sl_pct/100
-        tp1 = entry*1.012 if side=="BUY" else entry*0.988
-        tp2 = entry*1.025 if side=="BUY" else entry*0.975
-        tp3 = entry*1.045 if side=="BUY" else entry*0.955
+        # NEW 2.1% SYSTEM
+        tp1 = entry*1.021 if side=="BUY" else entry*0.979  # 2.1% = +$2.63 on $5
+        tp2 = entry*1.035 if side=="BUY" else entry*0.965  # 3.5% = +$4.38
+        tp3 = entry*1.055 if side=="BUY" else entry*0.945  # 5.5% = +$6.88
         min_dist = entry*0.005
         if side=="BUY":
             tp1=max(tp1, entry+min_dist); tp2=max(tp2, tp1+min_dist); tp3=max(tp3, tp2+min_dist)
@@ -341,10 +342,9 @@ def v16_scalp_sl_tp(entry, ob, fvg, side, atr_val, is_fast):
             if sl <= entry: sl = entry*1.018
         return sl, tp1, tp2, tp3
     except:
-        if side=="BUY": return entry*0.982, entry*1.012, entry*1.025, entry*1.045
-        else: return entry*1.018, entry*0.988, entry*0.975, entry*0.955
+        if side=="BUY": return entry*0.982, entry*1.021, entry*1.035, entry*1.055
+        else: return entry*1.018, entry*0.979, entry*0.965, entry*0.945
 
-# === FIXED LOGIC: RESPECT 15m/1H/2H FIRST ===
 def analyze_perfect(code, btc_trend=0, strict_vol=True):
     sym=CRYPTO.get(code,"BTCUSDT")
     kl15=get_klines(sym,"15m"); kl1=get_klines(sym,"1h"); kl2=get_klines(sym,"2h")
@@ -362,9 +362,7 @@ def analyze_perfect(code, btc_trend=0, strict_vol=True):
     s15,t15=get_mtf_trend(closes15); s1,t1=get_mtf_trend(closes1); s2,t2=get_mtf_trend(closes2)
     vol_pct,vol_txt=volume_check(kl2)
     if strict_vol and vol_pct < -80: return {"error":True,"msg":f"🚫 Vol low {vol_pct:.0f}%"}
-    
     align_score=3 if (s15<0 and s1<0 and s2<0) or (s15>0 and s1>0 and s2>0) else 2 if (s1<0 and s2<0) or (s1>0 and s2>0) else 1
-    
     if align_score == 3:
         direction = "BUY" if s15>0 and s1>0 and s2>0 else "SELL"
     else:
@@ -377,10 +375,8 @@ def analyze_perfect(code, btc_trend=0, strict_vol=True):
                 direction = "BUY" if candle_score>0 else "SELL"
         if chart_score != 0 and abs(chart_score) >= 30:
             direction = "BUY" if chart_score>0 else "SELL"
-    
     if rsi < 28 and s2 < -40: direction="BUY"; t2="🔄 OVERSOLD BUY 🤑"
     elif rsi > 72 and s2 > 40: direction="SELL"; t2="🔄 OVERBOUGHT SELL 🥶"
-    
     sl,tp1,tp2,tp3 = v16_scalp_sl_tp(live, ob, fvg, direction, atr, code in FAST_COINS)
     base_conf = 60
     base_conf += align_score*6
@@ -409,12 +405,12 @@ def generate_chart_perfect(r):
         kl=r["kl"][-120:]; closes=[c["c"] for c in kl]; e20s=ema_series(closes,20); e50s=ema_series(closes,50)
         fig, ax = plt.subplots(figsize=(10,5.5))
         ax.plot(closes, label="Price", color="black", linewidth=1.2); ax.plot(e20s, label="EMA20", color="#2196F3", linewidth=0.9); ax.plot(e50s, label="EMA50", color="#FF9800", linewidth=0.9)
-        ax.axhline(r["entry"], color="blue", linestyle="--", linewidth=1.2, label=f'Entry {fmt(r["entry"])}'); ax.axhline(r["sl"], color="red", linestyle="-", linewidth=1.3, label=f'SL {fmt(r["sl"])}'); ax.axhline(r["tp1"], color="green", linestyle="-", linewidth=1.2, label=f'TP1 {fmt(r["tp1"])} 1.2%'); ax.axhline(r["tp2"], color="#4CAF50", linestyle=":", linewidth=1.2, label=f'TP2 {fmt(r["tp2"])} 2.5%'); ax.axhline(r["tp3"], color="#00C853", linestyle="-.", linewidth=1.1, label=f'TP3 {fmt(r["tp3"])} 4.5%')
+        ax.axhline(r["entry"], color="blue", linestyle="--", linewidth=1.2, label=f'Entry {fmt(r["entry"])}'); ax.axhline(r["sl"], color="red", linestyle="-", linewidth=1.3, label=f'SL {fmt(r["sl"])}'); ax.axhline(r["tp1"], color="green", linestyle="-", linewidth=1.2, label=f'TP1 {fmt(r["tp1"])} 2.1%'); ax.axhline(r["tp2"], color="#4CAF50", linestyle=":", linewidth=1.2, label=f'TP2 {fmt(r["tp2"])} 3.5%'); ax.axhline(r["tp3"], color="#00C853", linestyle="-.", linewidth=1.1, label=f'TP3 {fmt(r["tp3"])} 5.5%')
         if r.get("fvg"):
             ax.axhspan(r["fvg"]["bottom"], r["fvg"]["top"], color='yellow', alpha=0.25, label=f'FVG {r["fvg"]["type"]}')
         if r.get("ob"):
             ax.axhline(r["ob"]["high"] if r["ob"]["side"]=="SELL" else r["ob"]["low"], color="orange", linestyle="-.", linewidth=1.5, label=f'OB {r["ob"]["type"]}')
-        ax.set_title(f'💀 {r["code"]} {r["dir"]} {r["conf"]}% V16.8 15m/1H/2H {r["candle"]}', fontsize=11, fontweight='bold'); ax.legend(fontsize=6, loc='upper left'); plt.tight_layout()
+        ax.set_title(f'💀 {r["code"]} {r["dir"]} {r["conf"]}% V16.9 2.1% $5 {r["candle"]}', fontsize=11, fontweight='bold'); ax.legend(fontsize=6, loc='upper left'); plt.tight_layout()
         buf=io.BytesIO(); plt.savefig(buf, format='png', dpi=150); buf.seek(0); plt.close(fig); return buf
     except Exception as e:
         print(f"chart err {e}")
@@ -452,21 +448,21 @@ def coins_kb_perfect(active_override=None, view="ALL"):
 
 async def setup_menu(app):
     try:
-        commands=[BotCommand("start","💀 Main V16.8"),BotCommand("fast","⚡ FAST 18"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL"),BotCommand("scan","🔍 SCAN 15m/1H/2H"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
+        commands=[BotCommand("start","💀 Main V16.9"),BotCommand("fast","⚡ FAST 18"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL"),BotCommand("scan","🔍 SCAN 15m/1H/2H"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
         await app.bot.set_my_commands(commands)
     except: pass
 
 async def start(u,c):
     save_chat_id(u.message.chat.id)
-    await u.message.reply_text("💀 *SKELLY'S BOT V16.8 FINAL 15m/1H/2H* 🔥\n\n✅ Scan 15m + 1H + 2H Align ✅\n✅ BUY/SELL Respects Trend ✅\n✅ OB/FVG/Whale Fixed ✅\n✅ 92% Perfect ✅",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text("💀 *SKELLY'S BOT V16.9 FINAL 2.1% $5* 🔥\n\n✅ 15m+1H+2H Align ✅\n✅ TP1 2.1% $2.63 TP2 3.5% $4.38 TP3 5.5% $6.88 ✅\n✅ $5 Stake Fixed ✅\n✅ 92% Perfect ✅",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 
-async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("⚡ *FAST 18 V16.8*",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
-async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 *SLOW 16 V16.8*",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
-async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 *ALL V16.8*",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("⚡ *FAST 18 V16.9*",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 *SLOW 16 V16.9*",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
+async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 *ALL V16.9*",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 
 async def scan_cmd(u,c):
     save_chat_id(u.message.chat.id); daily=get_daily(); btc=get_btc_trend()
-    await u.message.reply_text("🔍 V16.8 SCANNING 15m/1H/2H 18 coins...")
+    await u.message.reply_text("🔍 V16.9 SCANNING 15m/1H/2H 2.1%...")
     best=None; best_score=-10000
     scan_list=["SOL","DOGE","PEPE","BONK","WIF","AVAX","SUI","ARB","OP","BTC","ETH","XRP","JUP","ENA","TAO","NOT","BOME","FARTCOIN"]
     def scan_one(code):
@@ -493,14 +489,14 @@ async def scan_cmd(u,c):
     lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
     loss=stake*sl_lev/100; p1=stake*tp1_lev/100; p2=stake*tp2_lev/100; p3=stake*tp3_lev/100
     emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 💥"
-    txt=(f"💀 *V16.8 15m/1H/2H: {r['code']} {daily['trades']+1}/3 {r['conf']}%* {emoji}\n\n💰 {r['code']} {r['dir']} @ {fmt(r['entry'])} Stake ${stake} | {lev}x\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f}) 1.2% FAST\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f}) 2.5%\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f}) 4.5%\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) OB\n📊 Conf {r['conf']}% | Win {r['win_est']}% | {r['vol_txt']}\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']}")
+    txt=(f"💀 *V16.9 15m/1H/2H: {r['code']} {daily['trades']+1}/3 {r['conf']}%* {emoji}\n\n💰 {r['code']} {r['dir']} @ {fmt(r['entry'])} Stake ${stake} | {lev}x\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f}) 2.1% FAST\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f}) 3.5%\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f}) 5.5%\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) OB\n📊 Conf {r['conf']}% | Win {r['win_est']}% | {r['vol_txt']}\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']}")
     kb=coins_kb_perfect(active_data,view="ALL")
     if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
     else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 
 async def daily_cmd(u,c):
     save_chat_id(u.message.chat.id); daily=get_daily()
-    await u.message.reply_text(f"📊 *V16.8 Daily* {daily['date']}\nWins {daily['wins']} Loss {daily['losses']} Trades {daily['trades']}/3 P&L ${daily['pnl']:.2f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text(f"📊 *V16.9 Daily* {daily['date']}\nWins {daily['wins']} Loss {daily['losses']} Trades {daily['trades']}/3 P&L ${daily['pnl']:.2f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 
 async def monitor_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
@@ -512,12 +508,12 @@ async def monitor_cmd(u,c):
     lev=25; pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
     pnl=stake*pnl_pct/100; status="💚 PROFIT" if pnl_pct>=0 else "❤️ LOSS"
     emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-    txt=(f"📡 *V16.8 {coin} {emoji} {active.get('conf',0)}%* Stake ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)} LIVE\nSL {fmt(sl)} TP1 {fmt(tp1)} 1.2% | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+    txt=(f"📡 *V16.9 {coin} {emoji} {active.get('conf',0)}%* Stake ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)} LIVE\nSL {fmt(sl)} TP1 {fmt(tp1)} 2.1% | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
     await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL"))
 
 async def close_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
-    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V16.8",reply_markup=coins_kb_perfect(view="ALL"))
+    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V16.9",reply_markup=coins_kb_perfect(view="ALL"))
     else: await u.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL"))
 
 async def btn_handler(u,c):
@@ -525,7 +521,7 @@ async def btn_handler(u,c):
     if d=="IGNORE": return
     daily=get_daily(); btc=get_btc_trend()
     if d in ["MENU_FAST","MENU_SLOW","MENU_ALL"]:
-        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V16.8",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
+        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V16.9",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
     if d=="SHOW_DAILY":
         await q.message.reply_text(f"📊 Daily {daily['date']} Wins {daily['wins']} Loss {daily['losses']} Trades {daily['trades']}/3 P&L ${daily['pnl']:.2f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
     if d in ["MONITOR_LIVE","CHECK_NOW"]:
@@ -538,14 +534,14 @@ async def btn_handler(u,c):
         lev=25; pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
         pnl=stake*pnl_pct/100; status="💚 PROFIT" if pnl_pct>=0 else "❤️ LOSS"
         emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-        txt=(f"📡 *V16.8 {coin} {emoji} {active.get('conf',0)}%* Stake ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)} LIVE\nSL {fmt(sl)} TP1 {fmt(tp1)} 1.2% | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+        txt=(f"📡 *V16.9 {coin} {emoji} {active.get('conf',0)}%* Stake ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)} LIVE\nSL {fmt(sl)} TP1 {fmt(tp1)} 2.1% | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
         await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL")); return
     if d=="CLOSE_TRADE":
         active=get_active()
-        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V16.8",reply_markup=coins_kb_perfect(view="ALL"))
+        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V16.9",reply_markup=coins_kb_perfect(view="ALL"))
         else: await q.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL")); return
     if d=="SCAN_BEST":
-        await q.message.reply_text("🔍 V16.8 SCANNING 15m/1H/2H 18 coins...")
+        await q.message.reply_text("🔍 V16.9 SCANNING 15m/1H/2H 2.1%...")
         best=None; best_score=-10000
         scan_list=["SOL","DOGE","PEPE","BONK","WIF","AVAX","SUI","ARB","OP","BTC","ETH","XRP","JUP","ENA","TAO","NOT","BOME","FARTCOIN"]
         def scan_one(code):
@@ -571,7 +567,7 @@ async def btn_handler(u,c):
         set_active(active_data); buf=generate_chart_perfect(r); lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
         loss=stake*sl_lev/100; p1=stake*tp1_lev/100; p2=stake*tp2_lev/100; p3=stake*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 💥"
-        txt=(f"💀 *V16.8 15m/1H/2H: {r['code']} Trade {daily['trades']+1}/3 {r['conf']}%* {emoji} Stake ${stake} {lev}x\n💰 @ {fmt(r['entry'])} FUTURES\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f}) 1.2% FAST\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f}) 2.5%\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f}) 4.5%\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) OB\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']}")
+        txt=(f"💀 *V16.9 15m/1H/2H: {r['code']} Trade {daily['trades']+1}/3 {r['conf']}%* {emoji} Stake ${stake} {lev}x\n💰 @ {fmt(r['entry'])} FUTURES\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f}) 2.1% FAST\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f}) 3.5%\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f}) 5.5%\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) OB\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']}")
         kb=coins_kb_perfect(active_data,view="ALL")
         if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb); return
@@ -585,7 +581,7 @@ async def btn_handler(u,c):
         lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
         loss=stake*sl_lev/100; p1=stake*tp1_lev/100; p2=stake*tp2_lev/100; p3=stake*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 💥"
-        txt=(f"💀 *V16.8 {r['code']} {r['dir']} {r['conf']}% Stake ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} FUTURES\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f}) 1.2% FAST\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) OB\n{r['smc_txt']}\n{r['whale_txt']}\n{r['mtf_txt']}")
+        txt=(f"💀 *V16.9 {r['code']} {r['dir']} {r['conf']}% Stake ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} FUTURES\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f}) 2.1% FAST\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f}) 3.5%\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f}) 5.5%\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) OB\n{r['smc_txt']}\n{r['whale_txt']}\n{r['mtf_txt']}")
         kb=coins_kb_perfect(active_data,view="ALL")
         if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
@@ -600,13 +596,13 @@ async def txt_handler(u,c):
     stake=r["auto_stake"]
     active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"time":str(datetime.now()),"start_time":time.time(),"pyramid_done":False}
     set_active(active_data); buf=generate_chart_perfect(r)
-    txt=f"💀 *V16.8 {r['code']} {r['dir']} {r['conf']}% Stake ${stake} {r['lev']}x @ {fmt(r['entry'])}*\n{r['smc_txt']}"
+    txt=f"💀 *V16.9 {r['code']} {r['dir']} {r['conf']}% Stake ${stake} {r['lev']}x @ {fmt(r['entry'])}*\n{r['smc_txt']}"
     kb=coins_kb_perfect(active_data,view="ALL")
     if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
     else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 
 def monitor_loop():
-    print("V16.8 monitor started")
+    print("V16.9 monitor started")
     last_ping=0
     while True:
         try:
@@ -628,28 +624,28 @@ def monitor_loop():
             if not chat_id: continue
             hit=None
             if dir_=="BUY":
-                if price>=tp3: hit="TP3 MOON 🌕 4.5%"
-                elif price>=tp2: hit="TP2 GOOD 2.5%"
-                elif price>=tp1: hit="TP1 FAST 1.2%"
+                if price>=tp3: hit="TP3 MOON 🌕 5.5%"
+                elif price>=tp2: hit="TP2 GOOD 3.5%"
+                elif price>=tp1: hit="TP1 FAST 2.1%"
                 elif price<=sl: hit="SL"
             else:
-                if price<=tp3: hit="TP3 MOON 🌕 4.5%"
-                elif price<=tp2: hit="TP2 GOOD 2.5%"
-                elif price<=tp1: hit="TP1 FAST 1.2%"
+                if price<=tp3: hit="TP3 MOON 🌕 5.5%"
+                elif price<=tp2: hit="TP2 GOOD 3.5%"
+                elif price<=tp1: hit="TP1 FAST 2.1%"
                 elif price>=sl: hit="SL"
             if hit:
                 lev=25
                 if "TP1" in hit:
                     pnl_pct=abs(tp1-entry)/entry*100*lev; pnl=stake*pnl_pct/100
-                    msg=f"💀 V16.8 {hit}! {coin} ✅ +{pnl_pct:.0f}% +${pnl:.2f} 15m/1H/2H FAST!"
+                    msg=f"💀 V16.9 {hit}! {coin} ✅ +{pnl_pct:.0f}% +${pnl:.2f} 15m/1H/2H FAST!"
                     update_daily("WIN",pnl,coin); clear_active()
                 elif "TP2" in hit:
                     pnl_pct=abs(tp2-entry)/entry*100*lev; pnl=stake*pnl_pct/100
-                    msg=f"💀 V16.8 {hit}! {coin} ✅ +{pnl_pct:.0f}% +${pnl:.2f}"
+                    msg=f"💀 V16.9 {hit}! {coin} ✅ +{pnl_pct:.0f}% +${pnl:.2f}"
                     update_daily("WIN",pnl,coin); clear_active()
                 elif "TP3" in hit:
                     pnl_pct=abs(tp3-entry)/entry*100*lev; pnl=stake*pnl_pct/100
-                    msg=f"💀 V16.8 {hit}! {coin} 🌕 +{pnl_pct:.0f}% +${pnl:.2f} GOD!"
+                    msg=f"💀 V16.9 {hit}! {coin} 🌕 +{pnl_pct:.0f}% +${pnl:.2f} GOD!"
                     update_daily("WIN",pnl,coin); clear_active()
                 else:
                     pnl_pct=abs(sl-entry)/entry*100*lev; pnl=stake*pnl_pct/100
@@ -667,7 +663,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("fast",fast_cmd)); a.add_handler(CommandHandler("slow",slow_cmd)); a.add_handler(CommandHandler("all",all_cmd)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("close",close_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler)); a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, txt_handler))
-    print("Bot V16.8 FINAL 15m/1H/2H starting..."); a.run_polling(drop_pending_updates=True)
+    print("Bot V16.9 FINAL 2.1% $5 starting..."); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
