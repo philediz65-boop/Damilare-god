@@ -18,7 +18,7 @@ BACKUP_FILE="./active_backup.json"
 GLOBAL_ACTIVE={}; GLOBAL_CHAT_ID=None
 HEADERS={"User-Agent":"Mozilla/5.0"}
 
-# === V18.4 PERFECT - LOSS PROTECTION + STRICT FILTERS ===
+# === V18.4.5 BALANCED - 2-3 TRADES/DAY + FIXED OPPOSITE ===
 DEFAULT_STAKE=1.0
 REDUCED_STAKE=0.5
 DEFAULT_LEV=15
@@ -26,15 +26,15 @@ MEME_LEV=10
 MEME_COINS={"WIF","PEPE","BONK","FLOKI","BOME","SHIB","NOT","FARTCOIN"}
 def get_lev(c): return MEME_LEV if c in MEME_COINS else DEFAULT_LEV
 
-MIN_VOL_PCT = 20  # Perfect: 20% min
-MIN_ADX = 20      # Perfect: No choppy
-MIN_SCORE = 60    # Perfect: Only STRONG MODE and GOD MODE, no CHOPPY 43-59
-MIN_ADAPTIVE = 55
+MIN_VOL_PCT = 15  # Balanced for 2-3 trades
+MIN_ADX = 18      # Balanced
+MIN_SCORE = 50    # Balanced: 50+ give 2-3 trades per day
+MIN_ADAPTIVE = 45
 GOD_MODE_SCORE = 80
 MAX_DAILY_LOSS = 2
-MAX_PREM = 75     # No BUY above 75% Premium
-MIN_DISC = 25     # No SELL below 25% Discount
-print(f"💀 V18.4 PERFECT BOT {DATA_DIR} 👌")
+MAX_PREM = 80     # Balanced: Block BUY only if >80% (your ARB 86% go block)
+MIN_DISC = 20     # Balanced: Block SELL only if <20%
+print(f"💀 V18.4.5 BALANCED 2-3 TRADES {DATA_DIR} 👌")
 
 def load_json(p,d):
     try:
@@ -87,7 +87,7 @@ FAST_LIST=list(CRYPTO.keys())[:27]
 SLOW_LIST=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG"]
 
 @app.get("/")
-def home(): return "💀 SKELLY BOT V18.4 PERFECT 👌",200
+def home(): return "💀 SKELLY BOT V18.4.5 BALANCED 👌",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -305,7 +305,7 @@ def detect_chart_pattern(kl):
 def smart_sl_tp(entry, ob, fvg, side, atr_val, lev):
     try:
         liq_dist_pct = 1.0/lev * 100
-        max_sl_pct = min(liq_dist_pct * 0.55, 1.8 if lev==15 else 2.2)  # Tighter SL
+        max_sl_pct = min(liq_dist_pct * 0.55, 1.8 if lev==15 else 2.2)
         sl_dist = entry * max_sl_pct / 100
         sl = entry - sl_dist if side=="BUY" else entry + sl_dist
         if ob and ob["side"]==side:
@@ -347,27 +347,26 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
         elif (s1<0 and s2<0) or (s1>0 and s2>0): align=2
         else: align=1
 
-        # PERFECT FILTERS
+        # === V18.4.5 BALANCED FILTERS ===
         if adx < MIN_ADX:
             return {"error":False,"code":code,"perfect":False,"perfect_reason":f"ADX {adx:.0f} < {MIN_ADX} CHOPPY - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
         if vol_pct < MIN_VOL_PCT:
             return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Vol {vol_pct:.0f}% < {MIN_VOL_PCT}% LOW VOL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-        if s15 < 0 and t15.startswith("🟢") == False and "STRONG UP" in t15 and s15>0: pass
 
+        # FIX 1: 2H MUST MATCH DIRECTION - This fix your ATOM opposite SELL
+        # If 2H na UP, no allow SELL. If 2H na DOWN, no allow BUY
         forced_direction = None
-        if align==3 and adx >= 25:
-            if s15>0 and s1>0 and s2>0 and s15 >=20:
+        if align==3:
+            if s15>0 and s1>0 and s2>0:
                 forced_direction = "BUY"
-            elif s15<0 and s1<0 and s2<0 and s15 <=-20:
+            elif s15<0 and s1<0 and s2<0:
                 forced_direction = "SELL"
 
-        # 15m pullback check
-        if forced_direction=="BUY" and s15 < 20:  # 15m not strong enough
-            if s15 < 0:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"15m PULLBACK {t15} vs 2H BUY - SKIP wait pullback","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-        if forced_direction=="SELL" and s15 > -20:
-            if s15 > 0:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"15m PULLBACK {t15} vs 2H SELL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+        # 15m pullback check - balanced
+        if forced_direction=="BUY" and s15 < 0:
+            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"15m PULLBACK {t15} vs 2H BUY - SKIP wait pullback","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+        if forced_direction=="SELL" and s15 > 0:
+            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"15m PULLBACK {t15} vs 2H SELL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
 
         swept=kl2[-1]["l"] < min([k["l"] for k in kl2[-20:-3]])*0.998 if len(kl2)>=20 else False
         
@@ -375,18 +374,30 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
             direction = forced_direction
         else:
             direction="BUY" if s2>=0 else "SELL"
-            if ob and align>=2: direction=ob["side"]
+            if ob and align>=2 and not allow_choppy: 
+                # Only use OB if it matches 2H trend
+                if (s2>0 and ob["side"]=="BUY") or (s2<0 and ob["side"]=="SELL"):
+                    direction=ob["side"]
 
-        # PREMIUM/DISCOUNT STRICT BLOCK - This is what caused your loss
+        # FIX 2: 2H trend must match direction - BLOCK OPPOSITE LIKE ATOM
+        if s2>0 and direction=="SELL" and not allow_choppy:
+            # If 2H na UP but direction SELL, block unless 15m and 1H both DOWN strong
+            if not (s15< -20 and s1< -20):
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"2H {t2} UP but SELL - OPPOSITE - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+        if s2<0 and direction=="BUY" and not allow_choppy:
+            if not (s15>20 and s1>20):
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"2H {t2} DOWN but BUY - OPPOSITE - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+
+        # FIX 3: PREMIUM/DISCOUNT BLOCK - Your ARB loss na PREMIUM 86%
         if direction=="BUY" and pd_pct > MAX_PREM:
             return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BUY in PREMIUM {pd_pct:.0f}% >{MAX_PREM}% TOP - SKIP wait discount","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
         if direction=="SELL" and pd_pct < MIN_DISC:
             return {"error":False,"code":code,"perfect":False,"perfect_reason":f"SELL in DISCOUNT {pd_pct:.0f}% <{MIN_DISC}% BOTTOM - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
 
-        # OB + PD mismatch block
-        if direction=="BUY" and ob and ob["side"]=="SELL" and pd_zone=="PREMIUM":
+        # FIX 4: OB + PD trap
+        if direction=="BUY" and ob and ob["side"]=="SELL" and pd_zone=="PREMIUM" and not allow_choppy:
             return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BUY but BEARISH OB + PREMIUM {pd_pct:.0f}% = TRAP - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-        if direction=="SELL" and ob and ob["side"]=="BUY" and pd_zone=="DISCOUNT":
+        if direction=="SELL" and ob and ob["side"]=="BUY" and pd_zone=="DISCOUNT" and not allow_choppy:
             return {"error":False,"code":code,"perfect":False,"perfect_reason":f"SELL but BULLISH OB + DISCOUNT {pd_pct:.0f}% = TRAP - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
 
         score=0; reasons=[]
@@ -397,13 +408,14 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
 
         if adx>=25: score+=15; reasons.append(f"ADX {adx:.0f} +15")
         elif adx>=20: score+=10; reasons.append(f"ADX {adx:.0f} +10")
+        elif adx>=18: score+=5; reasons.append(f"ADX {adx:.0f} +5")
 
         if direction=="BUY" and rsi<45: score+=15; reasons.append(f"RSI {rsi:.0f} oversold +15")
         elif direction=="SELL" and rsi>55: score+=15; reasons.append(f"RSI {rsi:.0f} overbought +15")
         elif direction=="BUY" and rsi<50: score+=8; reasons.append(f"RSI {rsi:.0f} +8")
         elif direction=="SELL" and rsi>50: score+=8; reasons.append(f"RSI {rsi:.0f} +8")
         else:
-            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"RSI {rsi:.0f} not good for {direction}","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx}
+            if not allow_choppy: return {"error":False,"code":code,"perfect":False,"perfect_reason":f"RSI {rsi:.0f} not good for {direction}","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx}
 
         if ob and ob["side"]==direction: score+=15; reasons.append(f"OB {ob['type']} match +15")
         else:
@@ -411,15 +423,15 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
 
         if fvg and fvg["side"]==direction: score+=10; reasons.append(f"FVG {fvg['type']} +10")
         else:
-            if not allow_choppy: return {"error":False,"code":code,"perfect":False,"perfect_reason":f"FVG mismatch","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx}
+            if not allow_choppy: return {"error":False,"code":code,"perfect":False,"perfect_reason":f"FVG mismatch {fvg['type'] if fvg else 'None'} vs {direction}","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx}
 
         if swept: score+=10; reasons.append("Sweep +10")
         if vol_pct>=20: score+=10; reasons.append(f"Vol {vol_pct:.0f}% +10")
+        elif vol_pct>=15: score+=5; reasons.append(f"Vol {vol_pct:.0f}% +5")
 
         if direction=="BUY" and pd_zone=="DISCOUNT": score+=15; reasons.append(f"DISCOUNT {pd_pct:.0f}% +15")
         elif direction=="SELL" and pd_zone=="PREMIUM": score+=15; reasons.append(f"PREMIUM {pd_pct:.0f}% +15")
-        elif direction=="BUY" and pd_zone=="EQUILIBRIUM": score+=5; reasons.append(f"EQUILIB {pd_pct:.0f}% +5")
-        elif direction=="SELL" and pd_zone=="EQUILIBRIUM": score+=5; reasons.append(f"EQUILIB {pd_pct:.0f}% +5")
+        elif pd_zone=="EQUILIBRIUM": score+=5; reasons.append(f"EQUILIB {pd_pct:.0f}% +5")
 
         if "ENGULFING" in candle_sig and ((direction=="BUY" and "BULLISH" in candle_sig) or (direction=="SELL" and "BEARISH" in candle_sig)): score+=10; reasons.append(f"{candle_sig} +10")
         elif candle_sig!="NONE": score+=3
@@ -429,8 +441,8 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
 
         score=max(0,min(100,score))
 
-        if score < MIN_SCORE:
-            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Score {score}/100 < {MIN_SCORE} NOT PERFECT - SKIP","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx,"reasons":reasons}
+        if score < (MIN_SCORE if not allow_choppy else MIN_ADAPTIVE):
+            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Score {score}/100 < {MIN_SCORE if not allow_choppy else MIN_ADAPTIVE} - SKIP","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx,"reasons":reasons}
 
         sl,tp1,tp2,tp3=smart_sl_tp(live, ob, fvg, direction, atr, lev)
         big_bid,big_ask=get_whale_walls(sym); liq_txt=get_liq_hint(kl2)
@@ -438,8 +450,7 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
         smc_txt=f"🕯️ {candle_sig} | 📐 {chart_pat} | {ob['type'] if ob else '🟨 OB None'} | {fvg['type'] if fvg else '⚖️ FVG None'} | Sweep={'✅ YES' if swept else '❌ NO'}"
         if score >= GOD_MODE_SCORE: tag = "💀💀 GOD MODE"
         elif score >= 60: tag = "✅ STRONG MODE"
-        else: tag = "⚠️ CHOPPY MODE - SKIP"
-            # This won't happen because MIN_SCORE=60
+        else: tag = "✅ BALANCED MODE"
         return {"error":False,"code":code,"price":live,"rsi":rsi,"adx":adx,"atr":atr,"pd_zone":pd_zone,"pd_pct":pd_pct,"dir":direction,"entry":live,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":lev,"conf":score,"score":score,"kl":kl2,"mtf_txt":f"⏱️ 15m {t15} | 1H {t1} | 2H {t2} [Align {align}/3] ADX {adx:.0f}","vol_txt":vol_txt,"vol_pct":vol_pct,"sl_dist_pct":sl_pct,"tp1_dist_pct":tp1_pct,"tp2_dist_pct":tp2_pct,"tp3_dist_pct":tp3_pct,"whale_txt":f"🐋 Walls ${big_bid/1000:.0f}k/${big_ask/1000:.0f}k | {liq_txt}","auto_stake":DEFAULT_STAKE,"align_score":align,"smc_txt":smc_txt,"ob":ob,"fvg":fvg,"perfect":True,"perfect_reason":f"{tag} SCORE {score}/100 - {' | '.join(reasons)}","reasons":reasons}
     except Exception as e:
         return {"error":True,"msg":f"❌ Bug {code}: {str(e)[:180]}"}
@@ -523,7 +534,7 @@ def coins_kb_perfect(active_override=None, view="ALL"):
 
 async def setup_menu(app):
     try:
-        cmds=[BotCommand("start","💀 Main V18.4"),BotCommand("fast","⚡ FAST 27"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL 43"),BotCommand("scan","🔍 SCAN"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
+        cmds=[BotCommand("start","💀 Main V18.4.5"),BotCommand("fast","⚡ FAST 27"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL 43"),BotCommand("scan","🔍 SCAN"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
         await app.bot.set_my_commands(cmds)
     except: pass
 
@@ -539,7 +550,7 @@ def background_scan(chat_id):
 
         btc=get_btc_trend()
         scan_list=FAST_LIST
-        print(f"💀 PERFECT SCAN START {len(scan_list)} V18.4")
+        print(f"💀 BALANCED SCAN START {len(scan_list)} V18.4.5")
         for code in scan_list:
             try:
                 r=analyze_perfect(code, btc, False)
@@ -567,13 +578,13 @@ def background_scan(chat_id):
         print(f"SCAN DONE found {len(all_found)} best {best['code'] if best else 'None'}")
 
         if not best:
-            msg=f"⚠️ *No PERFECT trade {MIN_SCORE}+ found*\nScanned {len(scan_list)} coins. Market choppy or Premium top.\nPerfect bot waits for best setup - No trade is also a trade. Tap coin manually if you want check. 🙏"
+            msg=f"⚠️ *No PERFECT trade {MIN_SCORE}+ found*\nScanned {len(scan_list)} coins. Market choppy or Premium top.\nPerfect bot waits for best setup - Try again in 2 hours. 🙏"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
             return
 
         existing=get_active()
         if existing and existing.get("status")=="OPEN":
-            msg=f"⚠️ Active {existing.get('coin')} still OPEN - Close first before new SCAN. Use /close if needed"
+            msg=f"⚠️ Active {existing.get('coin')} still OPEN - Close first before new SCAN."
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg},timeout=10)
             return
 
@@ -585,8 +596,8 @@ def background_scan(chat_id):
         daily=get_daily()
         if r['conf'] >= GOD_MODE_SCORE: mode_txt = "💀💀 GOD MODE"
         elif r['conf'] >= 60: mode_txt = "✅ STRONG MODE"
-        else: mode_txt = "⚠️ CHOPPY MODE"
-        txt=(f"💀 *{mode_txt} PERFECT SCORE {r['conf']}/100 {r['code']} Trade {daily['trades']+1}/3* {'🟢 BUY LONG 🚀' if r['dir']=='BUY' else '🔴 SELL SHORT 💥'} ${stake} {lev}x\n"
+        else: mode_txt = "✅ BALANCED MODE"
+        txt=(f"💀 *{mode_txt} SCORE {r['conf']}/100 {r['code']} Trade {daily['trades']+1}/3* {'🟢 BUY LONG 🚀' if r['dir']=='BUY' else '🔴 SELL SHORT 💥'} ${stake} {lev}x\n"
              f"💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f}\n"
              f"⚡ TP1 {fmt(r['tp1'])} (+{r['tp1_dist_pct']*lev:.0f}% ${p1:.2f})\n"
              f"🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_dist_pct']*lev:.0f}% ${p2:.2f})\n"
@@ -603,27 +614,24 @@ def background_scan(chat_id):
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10)
     except Exception as e:
         print(f"BG Scan critical {e}")
-        try:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Scan crash {str(e)[:100]} - Tap /fast"},timeout=10)
-        except: pass
 
 async def start(u,c):
     save_chat_id(u.message.chat.id)
-    await u.message.reply_text(f"💀 *V18.4 PERFECT BOT RESTORED 👌*\n✅ Vol 20% min, ADX 20+ min, Score 60+ only\n✅ No BUY in PREMIUM >75%, No SELL in DISCOUNT <25%\n✅ 15m pullback check + OB+PD match\n✅ Daily loss limit 2 + Reduced stake after loss\n✅ GOD MODE 80+ ONLY perfect setups",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
-async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text(f"⚡ FAST 27 PERFECT {MIN_SCORE}+ ONLY",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
-async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 SLOW 16 PERFECT",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
-async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 ALL 43 PERFECT",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text(f"💀 *V18.4.5 BALANCED 2-3 TRADES PER DAY 👌*\n✅ Vol 15% min, ADX 18+ min, Score 50+ only\n✅ 2H trend must match direction - No more opposite like ATOM\n✅ No BUY >80% PREMIUM, No SELL <20% DISCOUNT\n✅ OB+FVG must match + Daily limit 2\n✅ 3/3 STRONG UP=BUY, 3/3 DOWN=SELL with TP/SL",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text(f"⚡ FAST 27 BALANCED {MIN_SCORE}+ - 2-3 trades/day",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 SLOW 16 BALANCED",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
+async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 ALL 43 BALANCED",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 async def scan_cmd(u,c):
     save_chat_id(u.message.chat.id); chat_id=u.message.chat.id
     daily=get_daily()
     if daily['losses'] >= MAX_DAILY_LOSS:
-        await u.message.reply_text(f"🛑 Daily loss limit {daily['losses']} reached - Bot paused today to protect capital. P&L ${daily['pnl']:.2f} - Rest 🙏")
+        await u.message.reply_text(f"🛑 Daily loss limit {daily['losses']} reached - Bot paused today. P&L ${daily['pnl']:.2f} - Rest 🙏")
         return
-    await u.message.reply_text(f"🔍 PERFECT SCANNING 27 coins...\nOnly GOD MODE 80+ and STRONG 60+ - No choppy trades 👌")
+    await u.message.reply_text(f"🔍 BALANCED SCANNING 27 coins...\nVol 15%+ ADX 18+ Score 50+ = 2-3 trades/day 👌")
     threading.Thread(target=background_scan, args=(chat_id,), daemon=True).start()
 async def daily_cmd(u,c):
     save_chat_id(u.message.chat.id); daily=get_daily()
-    await u.message.reply_text(f"📊 *V18.4 Perfect Daily ${DEFAULT_STAKE}* {daily['date']}\n🏆 Wins {daily['wins']} ❌ Loss {daily['losses']} 📈 Trades {daily['trades']}/3 💰 P&L ${daily['pnl']:.2f}\nLast: {daily.get('last_result','')} | Stake next: ${REDUCED_STAKE if daily.get('last_result')=='LOSS' else DEFAULT_STAKE}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text(f"📊 *V18.4.5 Daily ${DEFAULT_STAKE}* {daily['date']}\n🏆 Wins {daily['wins']} ❌ Loss {daily['losses']} 📈 Trades {daily['trades']}/3 💰 P&L ${daily['pnl']:.2f}\nLast: {daily.get('last_result','')} | Stake next: ${REDUCED_STAKE if daily.get('last_result')=='LOSS' else DEFAULT_STAKE}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 async def monitor_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
     if not active or active.get("status")!="OPEN":
@@ -634,11 +642,11 @@ async def monitor_cmd(u,c):
     pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
     pnl=stake*pnl_pct/100; status="💚 PROFIT 🤑" if pnl_pct>=0 else "❤️ LOSS 😢"
     emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-    txt=(f"📡 *V18.4 PERFECT {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\n💰 Entry {fmt(entry)} Now {fmt(price)}\n🛑 SL {fmt(sl)} | ⚡ TP1 {fmt(tp1)} | 🎯 TP2 {fmt(tp2)} | 🚀 TP3 {fmt(tp3)}\n💵 P&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+    txt=(f"📡 *V18.4.5 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\n💰 Entry {fmt(entry)} Now {fmt(price)}\n🛑 SL {fmt(sl)} | ⚡ TP1 {fmt(tp1)} | 🎯 TP2 {fmt(tp2)} | 🚀 TP3 {fmt(tp3)}\n💵 P&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
     await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL"))
 async def close_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
-    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.4 PERFECT 👌",reply_markup=coins_kb_perfect(view="ALL"))
+    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.4.5 BALANCED 👌",reply_markup=coins_kb_perfect(view="ALL"))
     else: await u.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL"))
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); d=q.data
@@ -649,7 +657,7 @@ async def btn_handler(u,c):
             await q.message.reply_text(f"🛑 Daily loss limit {daily['losses']} reached - Paused to protect you. Come back tomorrow 🙏",reply_markup=coins_kb_perfect(view="ALL"))
             return
     if d in ["MENU_FAST","MENU_SLOW","MENU_ALL"]:
-        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V18.4 PERFECT 👌",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
+        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V18.4.5 BALANCED 👌",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
     if d=="SHOW_DAILY":
         await q.message.reply_text(f"📊 Daily {daily['date']} Wins {daily['wins']} Loss {daily['losses']} Trades {daily['trades']}/3 P&L ${daily['pnl']:.2f} Last {daily.get('last_result','')}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
     if d in ["MONITOR_LIVE","CHECK_NOW"]:
@@ -662,15 +670,15 @@ async def btn_handler(u,c):
         pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
         pnl=stake*pnl_pct/100; status="💚 PROFIT 🤑" if pnl_pct>=0 else "❤️ LOSS"
         emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-        txt=(f"📡 *V18.4 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)}\nSL {fmt(sl)} | TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+        txt=(f"📡 *V18.4.5 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)}\nSL {fmt(sl)} | TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
         await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL")); return
     if d=="CLOSE_TRADE":
         active=get_active()
-        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.4 PERFECT 👌",reply_markup=coins_kb_perfect(view="ALL"))
+        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.4.5 BALANCED 👌",reply_markup=coins_kb_perfect(view="ALL"))
         else: await q.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL")); return
     if d=="SCAN_BEST":
         chat_id=q.message.chat.id
-        await q.message.reply_text(f"🔍 PERFECT SCANNING 27... Only 60+ scores 👌")
+        await q.message.reply_text(f"🔍 BALANCED SCANNING 27... Score 50+ = 2-3 trades/day 👌")
         threading.Thread(target=background_scan, args=(chat_id,), daemon=True).start()
         return
     if d.startswith("C_"):
@@ -688,7 +696,7 @@ async def btn_handler(u,c):
         lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
         loss=stake*sl_lev/100; p1=stake*tp1_lev/100; p2=stake*tp2_lev/100; p3=stake*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 💥"
-        txt=(f"💀 *V18.4 PERFECT SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f}\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) SAFE 👌\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']} | {r['vol_txt']}\n✅ {r['perfect_reason']}")
+        txt=(f"💀 *V18.4.5 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f}\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) SAFE 👌\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']} | {r['vol_txt']}\n✅ {r['perfect_reason']}")
         kb=coins_kb_perfect(active_data,view="ALL")
         if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
@@ -707,18 +715,18 @@ async def txt_handler(u,c):
     if not r.get("perfect"):
         r2=analyze_perfect(code, btc, True)
         if r2.get("perfect") and r2.get("conf",0)>=MIN_ADAPTIVE: r=r2
-        else: await u.message.reply_text(f"⚠️ *SKIP {code}* - {r.get('perfect_reason')}\nScore {r.get('conf',0)}/100 PERFECT bot waits for best",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
+        else: await u.message.reply_text(f"⚠️ *SKIP {code}* - {r.get('perfect_reason')}\nScore {r.get('conf',0)}/100",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
     stake=REDUCED_STAKE if daily.get("last_result")=="LOSS" else DEFAULT_STAKE
     r["auto_stake"]=stake
     active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"start_time":time.time()}
     set_active(active_data); buf=generate_chart_perfect(r)
-    txt=f"💀 *V18.4 PERFECT SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {r['lev']}x @ {fmt(r['entry'])}* 👌\n{r['smc_txt']}\n✅ {r['perfect_reason']}"
+    txt=f"💀 *V18.4.5 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {r['lev']}x @ {fmt(r['entry'])}* 👌\n{r['smc_txt']}\n✅ {r['perfect_reason']}"
     kb=coins_kb_perfect(active_data,view="ALL")
     if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
     else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 
 def monitor_loop():
-    print("Monitor started V18.4 PERFECT")
+    print("Monitor started V18.4.5 BALANCED")
     last_ping=0
     while True:
         try:
@@ -765,7 +773,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("fast",fast_cmd)); a.add_handler(CommandHandler("slow",slow_cmd)); a.add_handler(CommandHandler("all",all_cmd)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("close",close_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler)); a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, txt_handler))
-    print("Bot V18.4 PERFECT starting..."); a.run_polling(drop_pending_updates=True)
+    print("Bot V18.4.5 BALANCED starting..."); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
