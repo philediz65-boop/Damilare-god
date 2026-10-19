@@ -18,7 +18,7 @@ BACKUP_FILE="./active_backup.json"
 GLOBAL_ACTIVE={}; GLOBAL_CHAT_ID=None
 HEADERS={"User-Agent":"Mozilla/5.0"}
 
-# === V18.3.3 FINAL RESTORED - ALL LEVS + NO HANG + 2-3 trades/day ===
+# === V18.3.4 FINAL - ALL LEVS + SCAN FIXED + GOD MODE ADDED ===
 DEFAULT_STAKE=1.0
 DEFAULT_LEV=15
 MEME_LEV=10
@@ -29,7 +29,8 @@ MIN_VOL_PCT = -35
 MIN_ALIGN = 1
 MIN_SCORE = 43
 MIN_ADAPTIVE = 40
-print(f"V18.3.3 RESTORED {DATA_DIR} - LEVS + SCAN FIXED")
+GOD_MODE_SCORE = 80  # NEW: GOD MODE threshold
+print(f"V18.3.4 GOD MODE {DATA_DIR} - LEVS + SCAN + GOD MODE")
 
 def load_json(p,d):
     try:
@@ -82,7 +83,7 @@ FAST_LIST=list(CRYPTO.keys())[:27]
 SLOW_LIST=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG"]
 
 @app.get("/")
-def home(): return "💀 SKELLY BOT V18.3.3 RESTORED LEVS 👌",200
+def home(): return "💀 SKELLY BOT V18.3.4 GOD MODE 👌",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -104,7 +105,6 @@ def clean(t):
 def get_klines(sym, interval="2h"):
     key=f"{sym}_{interval}"
     if key in CACHE and time.time()-CACHE[key][0]<60: return CACHE[key][1]
-    # RESTORED 3 sources + longer timeout 8 sec to fix No data DOGE
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":150},headers=HEADERS,timeout=8).json()
         if isinstance(r,list) and len(r)>=20:
@@ -127,7 +127,6 @@ def get_klines(sym, interval="2h"):
             kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in data[::-1]]
             CACHE[key]=(time.time(),kl); return kl
     except: pass
-    # Fallback: try 1h if 2h fails - fix No data DOGE
     if interval=="2h":
         kl1=get_klines(sym,"1h")
         if kl1: 
@@ -326,7 +325,6 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
         sym=CRYPTO.get(code,"BTCUSDT")
         kl15=get_klines(sym,"15m"); kl1=get_klines(sym,"1h"); kl2=get_klines(sym,"2h")
         if len(kl2)<15: 
-            # Fallback - try 1h data - FIX No data DOGE
             kl2=get_klines(sym,"1h")
             if len(kl2)<15:
                 return {"error":True,"msg":f"❌ No data {code} - API timeout"}
@@ -391,7 +389,13 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
         big_bid,big_ask=get_whale_walls(sym); liq_txt=get_liq_hint(kl2)
         sl_pct=abs(sl-live)/live*100; tp1_pct=abs(tp1-live)/live*100; tp2_pct=abs(tp2-live)/live*100; tp3_pct=abs(tp3-live)/live*100
         smc_txt=f"🕯️ {candle_sig} | 📐 {chart_pat} | {ob['type'] if ob else '🟨 OB None'} | {fvg['type'] if fvg else '⚖️ FVG None'} | Sweep={'✅ YES' if swept else '❌ NO'}"
-        tag="⚠️ CHOPPY" if score<60 else "✅ STRONG"
+        # GOD MODE ADDED HERE - NO OTHER CHANGE
+        if score >= GOD_MODE_SCORE:
+            tag = "💀💀 GOD MODE"
+        elif score >= 60:
+            tag = "✅ STRONG MODE"
+        else:
+            tag = "⚠️ CHOPPY MODE"
         return {"error":False,"code":code,"price":live,"rsi":rsi,"adx":adx,"atr":atr,"pd_zone":pd_zone,"pd_pct":pd_pct,"dir":direction,"entry":live,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":lev,"conf":score,"score":score,"kl":kl2,"mtf_txt":f"⏱️ 15m {t15} | 1H {t1} | 2H {t2} [Align {align}/3] ADX {adx:.0f}","vol_txt":vol_txt,"vol_pct":vol_pct,"sl_dist_pct":sl_pct,"tp1_dist_pct":tp1_pct,"tp2_dist_pct":tp2_pct,"tp3_dist_pct":tp3_pct,"whale_txt":f"🐋 Walls ${big_bid/1000:.0f}k/${big_ask/1000:.0f}k | {liq_txt}","auto_stake":DEFAULT_STAKE,"align_score":align,"smc_txt":smc_txt,"ob":ob,"fvg":fvg,"perfect":True,"perfect_reason":f"{tag} SCORE {score}/100 - {' | '.join(reasons)}","reasons":reasons}
     except Exception as e:
         return {"error":True,"msg":f"❌ Bug {code}: {str(e)[:180]}"}
@@ -440,7 +444,6 @@ def coins_kb_perfect(active_override=None, view="ALL"):
         btns.append([InlineKeyboardButton(f"{emoji} {coin} {active.get('conf',0)}/100 {lev}x LIVE 🔴",callback_data="MONITOR_LIVE")])
         btns.append([InlineKeyboardButton(f"👀 Check {coin} Now",callback_data="CHECK_NOW"), InlineKeyboardButton(f"❌ Close {coin}",callback_data="CLOSE_TRADE")])
     else:
-        # RESTORED LEV DISPLAY
         btns.append([InlineKeyboardButton(f"🔍 SCAN 27 SCORE {MIN_SCORE}+ ${DEFAULT_STAKE} - Trade {daily['trades']+1}/3 💀",callback_data="SCAN_BEST")])
     btns.append([InlineKeyboardButton(f"📊 Daily: {daily['wins']}W/{daily['losses']}L P&L ${daily['pnl']:.2f}",callback_data="SHOW_DAILY")])
     btns.append([InlineKeyboardButton("⚡ FAST 27",callback_data="MENU_FAST"), InlineKeyboardButton("🐢 SLOW 16",callback_data="MENU_SLOW"), InlineKeyboardButton("📋 ALL 43",callback_data="MENU_ALL")])
@@ -448,7 +451,6 @@ def coins_kb_perfect(active_override=None, view="ALL"):
         btns.append([InlineKeyboardButton(f"--- ⚡ FAST 27 ${DEFAULT_STAKE} SCORE ---",callback_data="IGNORE")])
         row=[]
         for c in FAST_LIST:
-            # RESTORED LEVERAGE HERE - FIX YOUR SCREENSHOT
             lev=get_lev(c)
             row.append(InlineKeyboardButton(f"⚡ {c} {lev}x",callback_data=f"C_{c}"))
             if len(row)==3: btns.append(row); row=[]
@@ -474,11 +476,10 @@ def coins_kb_perfect(active_override=None, view="ALL"):
 
 async def setup_menu(app):
     try:
-        cmds=[BotCommand("start","💀 Main V18.3.3"),BotCommand("fast","⚡ FAST 27"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL 43"),BotCommand("scan","🔍 SCAN"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
+        cmds=[BotCommand("start","💀 Main V18.3.4"),BotCommand("fast","⚡ FAST 27"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL 43"),BotCommand("scan","🔍 SCAN"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
         await app.bot.set_my_commands(cmds)
     except: pass
 
-# FIXED SCAN - SEQUENTIAL NO DEADLOCK + ALWAYS RETURNS RESULT
 def background_scan(chat_id):
     best=None
     all_found=[]
@@ -521,7 +522,13 @@ def background_scan(chat_id):
         set_active({"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"start_time":time.time()})
         lev=r["lev"]; loss=stake*r["sl_dist_pct"]*lev/100; p1=stake*r["tp1_dist_pct"]*lev/100; p2=stake*r["tp2_dist_pct"]*lev/100; p3=stake*r["tp3_dist_pct"]*lev/100
         daily=get_daily()
-        mode_txt="⚠️ CHOPPY MODE" if r['conf']<60 else "✅ STRONG MODE"
+        # GOD MODE TAG FOR MESSAGE
+        if r['conf'] >= GOD_MODE_SCORE:
+            mode_txt = "💀💀 GOD MODE"
+        elif r['conf'] >= 60:
+            mode_txt = "✅ STRONG MODE"
+        else:
+            mode_txt = "⚠️ CHOPPY MODE"
         txt=(f"💀 *{mode_txt} SCORE {r['conf']}/100 {r['code']} Trade {daily['trades']+1}/3* {'🟢 BUY LONG 🚀' if r['dir']=='BUY' else '🔴 SELL SHORT 💥'} ${stake} {lev}x\n"
              f"💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f}\n"
              f"⚡ TP1 {fmt(r['tp1'])} (+{r['tp1_dist_pct']*lev:.0f}% ${p1:.2f})\n"
@@ -545,17 +552,17 @@ def background_scan(chat_id):
 
 async def start(u,c):
     save_chat_id(u.message.chat.id)
-    await u.message.reply_text(f"💀 *V18.3.3 RESTORED ALL SETTINGS 👌*\n✅ LEV 15x/10x restored on every coin\n✅ FAST 27 {get_lev('BTC')}x with lev display\n✅ SLOW 16 with lev\n✅ ALL 43 with lev\n✅ No data DOGE FIXED - 3 sources 8 sec\n✅ Scan fixed - sequential must reply\nScore {MIN_SCORE}+/{MIN_ADAPTIVE}+ 2-3 trades/day",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
-async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text(f"⚡ FAST 27 {MIN_SCORE}+ / {MIN_ADAPTIVE}+ LEVS RESTORED",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+    await u.message.reply_text(f"💀 *V18.3.4 GOD MODE RESTORED 👌*\n✅ LEV 15x/10x on every coin\n✅ SCAN 27 fixed sequential\n✅ GOD MODE 80+ = 💀💀 GOD MODE\n✅ STRONG 60-79, CHOPPY 43-59\nScore {MIN_SCORE}+/{MIN_ADAPTIVE}+ 2-3 trades/day",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text(f"⚡ FAST 27 {MIN_SCORE}+ / {MIN_ADAPTIVE}+ LEVS + GOD MODE",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
 async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 SLOW 16 LEVS",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
-async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 ALL 43 LEVS RESTORED",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 ALL 43 LEVS + GOD MODE",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 async def scan_cmd(u,c):
     save_chat_id(u.message.chat.id); chat_id=u.message.chat.id
-    await u.message.reply_text(f"🔍 SCANNING 27 coins FIXED...\n⏳ 12 sec {MIN_SCORE}+ / {MIN_ADAPTIVE}+ LEVS + NO HANG 👌")
+    await u.message.reply_text(f"🔍 SCANNING 27 coins...\n⏳ 12 sec {MIN_SCORE}+ / {MIN_ADAPTIVE}+ GOD MODE 👌")
     threading.Thread(target=background_scan, args=(chat_id,), daemon=True).start()
 async def daily_cmd(u,c):
     save_chat_id(u.message.chat.id); daily=get_daily()
-    await u.message.reply_text(f"📊 *V18.3.3 Daily ${DEFAULT_STAKE}* {daily['date']}\n🏆 Wins {daily['wins']} ❌ Loss {daily['losses']} 📈 Trades {daily['trades']}/3 💰 P&L ${daily['pnl']:.2f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text(f"📊 *V18.3.4 Daily ${DEFAULT_STAKE}* {daily['date']}\n🏆 Wins {daily['wins']} ❌ Loss {daily['losses']} 📈 Trades {daily['trades']}/3 💰 P&L ${daily['pnl']:.2f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 async def monitor_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
     if not active or active.get("status")!="OPEN":
@@ -566,18 +573,18 @@ async def monitor_cmd(u,c):
     pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
     pnl=stake*pnl_pct/100; status="💚 PROFIT 🤑" if pnl_pct>=0 else "❤️ LOSS 😢"
     emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-    txt=(f"📡 *V18.3.3 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\n💰 Entry {fmt(entry)} Now {fmt(price)}\n🛑 SL {fmt(sl)} | ⚡ TP1 {fmt(tp1)} | 🎯 TP2 {fmt(tp2)} | 🚀 TP3 {fmt(tp3)}\n💵 P&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+    txt=(f"📡 *V18.3.4 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\n💰 Entry {fmt(entry)} Now {fmt(price)}\n🛑 SL {fmt(sl)} | ⚡ TP1 {fmt(tp1)} | 🎯 TP2 {fmt(tp2)} | 🚀 TP3 {fmt(tp3)}\n💵 P&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
     await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL"))
 async def close_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
-    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.3.3 👌",reply_markup=coins_kb_perfect(view="ALL"))
+    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.3.4 GOD MODE 👌",reply_markup=coins_kb_perfect(view="ALL"))
     else: await u.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL"))
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); d=q.data
     if d=="IGNORE": return
     daily=get_daily(); btc=get_btc_trend()
     if d in ["MENU_FAST","MENU_SLOW","MENU_ALL"]:
-        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V18.3.3 LEVS 👌",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
+        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V18.3.4 LEVS + GOD MODE 👌",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
     if d=="SHOW_DAILY":
         await q.message.reply_text(f"📊 Daily {daily['date']} Wins {daily['wins']} Loss {daily['losses']} Trades {daily['trades']}/3 P&L ${daily['pnl']:.2f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
     if d in ["MONITOR_LIVE","CHECK_NOW"]:
@@ -590,15 +597,15 @@ async def btn_handler(u,c):
         pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
         pnl=stake*pnl_pct/100; status="💚 PROFIT 🤑" if pnl_pct>=0 else "❤️ LOSS"
         emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-        txt=(f"📡 *V18.3.3 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)}\nSL {fmt(sl)} | TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+        txt=(f"📡 *V18.3.4 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)}\nSL {fmt(sl)} | TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
         await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL")); return
     if d=="CLOSE_TRADE":
         active=get_active()
-        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.3.3 👌",reply_markup=coins_kb_perfect(view="ALL"))
+        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.3.4 GOD MODE 👌",reply_markup=coins_kb_perfect(view="ALL"))
         else: await q.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL")); return
     if d=="SCAN_BEST":
         chat_id=q.message.chat.id
-        await q.message.reply_text(f"🔍 SCANNING 27 LEVS FIXED... 👌")
+        await q.message.reply_text(f"🔍 SCANNING 27 LEVS + GOD MODE... 👌")
         threading.Thread(target=background_scan, args=(chat_id,), daemon=True).start()
         return
     if d.startswith("C_"):
@@ -615,7 +622,7 @@ async def btn_handler(u,c):
         lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
         loss=stake*sl_lev/100; p1=stake*tp1_lev/100; p2=stake*tp2_lev/100; p3=stake*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 💥"
-        txt=(f"💀 *V18.3.3 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f}\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) SAFE 👌\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']} | {r['vol_txt']}\n✅ {r['perfect_reason']}")
+        txt=(f"💀 *V18.3.4 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f}\n⚡ TP1 {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) SAFE 👌\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']} | {r['vol_txt']}\n✅ {r['perfect_reason']}")
         kb=coins_kb_perfect(active_data,view="ALL")
         if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
@@ -634,13 +641,13 @@ async def txt_handler(u,c):
     stake=r["auto_stake"]
     active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"start_time":time.time()}
     set_active(active_data); buf=generate_chart_perfect(r)
-    txt=f"💀 *V18.3.3 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {r['lev']}x @ {fmt(r['entry'])}* 👌\n{r['smc_txt']}\n✅ {r['perfect_reason']}"
+    txt=f"💀 *V18.3.4 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {r['lev']}x @ {fmt(r['entry'])}* 👌\n{r['smc_txt']}\n✅ {r['perfect_reason']}"
     kb=coins_kb_perfect(active_data,view="ALL")
     if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
     else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 
 def monitor_loop():
-    print("Monitor started V18.3.3 RESTORED")
+    print("Monitor started V18.3.4 GOD MODE")
     last_ping=0
     while True:
         try:
@@ -687,7 +694,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("fast",fast_cmd)); a.add_handler(CommandHandler("slow",slow_cmd)); a.add_handler(CommandHandler("all",all_cmd)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("close",close_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler)); a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, txt_handler))
-    print("Bot V18.3.3 RESTORED LEVS starting..."); a.run_polling(drop_pending_updates=True)
+    print("Bot V18.3.4 GOD MODE RESTORED starting..."); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
