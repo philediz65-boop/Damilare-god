@@ -18,25 +18,25 @@ BACKUP_FILE="./active_backup.json"
 GLOBAL_ACTIVE={}; GLOBAL_CHAT_ID=None
 HEADERS={"User-Agent":"Mozilla/5.0"}
 
-# === V18.5.2 FINAL FIXED - GUARANTEED + NO BEAR MIX ===
+# === V18.7 QUICK TP - 57 COINS + GUARANTEED ===
 DEFAULT_STAKE=1.0
 REDUCED_STAKE=0.5
 CHOPPY_STAKE=0.5
 DEFAULT_LEV=15
 MEME_LEV=10
-MEME_COINS={"WIF","PEPE","BONK","FLOKI","BOME","SHIB","NOT","FARTCOIN"}
+MEME_COINS={"WIF","PEPE","BONK","FLOKI","BOME","SHIB","NOT","FARTCOIN","ZEREBRO","BR","PONS","TRUMP"}
 def get_lev(c): return MEME_LEV if c in MEME_COINS else DEFAULT_LEV
 
-MIN_VOL_PCT = 10
-MIN_ADX = 15
-MIN_SCORE = 55
-MIN_ADAPTIVE = 45
-MIN_CHOPPY = 35
-GOD_MODE_SCORE = 80
+MIN_VOL_PCT = 8
+MIN_ADX = 12
+MIN_SCORE = 30
+MIN_ADAPTIVE = 25
+MIN_CHOPPY = 20
+GOD_MODE_SCORE = 75
 MAX_DAILY_LOSS = 2
 MAX_PREM = 82
 MIN_DISC = 18
-print(f"💀 V18.5.2 FINAL FIXED {DATA_DIR} 👌")
+print(f"💀 V18.7 QUICK TP 57 COINS {DATA_DIR} 👌")
 
 def load_json(p,d):
     try:
@@ -84,12 +84,15 @@ def get_chat_id():
     if cid: GLOBAL_CHAT_ID=cid
     return cid
 
-CRYPTO={"BTC":"BTCUSDT","ETH":"ETHUSDT","BNB":"BNBUSDT","SOL":"SOLUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","AVAX":"AVAXUSDT","LINK":"LINKUSDT","TRX":"TRXUSDT","DOT":"DOTUSDT","MATIC":"MATICUSDT","LTC":"LTCUSDT","BCH":"BCHUSDT","UNI":"UNIUSDT","ATOM":"ATOMUSDT","ETC":"ETCUSDT","FIL":"FILUSDT","PEPE":"PEPEUSDT","BONK":"BONKUSDT","SHIB":"SHIBUSDT","FLOKI":"FLOKIUSDT","WIF":"WIFUSDT","BOME":"BOMEUSDT","SUI":"SUIUSDT","ARB":"ARBUSDT","OP":"OPUSDT","APT":"APTUSDT","TAO":"TAOUSDT","NOT":"NOTUSDT","PAXG":"PAXGUSDT","JUP":"JUPUSDT","ENA":"ENAUSDT","FARTCOIN":"FARTCOINUSDT","TIA":"TIAUSDT","AVAIL":"AVAILUSDT","DYM":"DYMUSDT","ALT":"ALTUSDT","EIGEN":"EIGENUSDT","STRK":"STRKUSDT","SAGA":"SAGAUSDT","MANTA":"MANTAUSDT","GTC":"GTCUSDT"}
-FAST_LIST=list(CRYPTO.keys())[:27]
-SLOW_LIST=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG"]
+CRYPTO={
+    "BTC":"BTCUSDT","ETH":"ETHUSDT","BNB":"BNBUSDT","SOL":"SOLUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","AVAX":"AVAXUSDT","LINK":"LINKUSDT","TRX":"TRXUSDT","DOT":"DOTUSDT","MATIC":"MATICUSDT","LTC":"LTCUSDT","BCH":"BCHUSDT","UNI":"UNIUSDT","ATOM":"ATOMUSDT","ETC":"ETCUSDT","FIL":"FILUSDT","PEPE":"PEPEUSDT","BONK":"BONKUSDT","SHIB":"SHIBUSDT","FLOKI":"FLOKIUSDT","WIF":"WIFUSDT","BOME":"BOMEUSDT","SUI":"SUIUSDT","ARB":"ARBUSDT","OP":"OPUSDT","APT":"APTUSDT","TAO":"TAOUSDT","NOT":"NOTUSDT","PAXG":"PAXGUSDT","JUP":"JUPUSDT","ENA":"ENAUSDT","FARTCOIN":"FARTCOINUSDT","TIA":"TIAUSDT","AVAIL":"AVAILUSDT","DYM":"DYMUSDT","ALT":"ALTUSDT","EIGEN":"EIGENUSDT","STRK":"STRKUSDT","SAGA":"SAGAUSDT","MANTA":"MANTAUSDT","GTC":"GTCUSDT",
+    "WLD":"WLDUSDT","ZEREBRO":"ZEREBROUSDT","ASTER":"ASTERUSDT","XAUT":"XAUTUSDT","HBAR":"HBARUSDT","ONDO":"ONDOUSDT","VVV":"VVVUSDT","BR":"BRUSDT","TRUMP":"TRUMPUSDT","PONS":"PONSUSDT","HYPE":"HYPEUSDT","QNT":"QNTUSDT","NEAR":"NEARUSDT","MNT":"MNTUSDT"
+}
+FAST_LIST=["WLD","ZEREBRO","TRUMP","HYPE","ONDO","APT","ENA","NEAR","BTC","ETH","SOL","XRP","AVAX","LINK","SUI","LTC","UNI","QNT","HBAR","DOGE","DOT","ARB","OP","TAO","PEPE","BONK","FLOKI","WIF","SHIB","BNB","ADA","MATIC","ASTER","VVV","BR"][:35]
+SLOW_LIST=["BTC","ETH","BNB","XRP","ADA","LINK","TRX","DOT","MATIC","LTC","BCH","UNI","ATOM","ETC","FIL","PAXG","WLD","ONDO","APT","NEAR"]
 
 @app.get("/")
-def home(): return "💀 SKELLY BOT V18.5.2 FINAL FIXED 👌",200
+def home(): return "💀 SKELLY BOT V18.7 QUICK TP 👌",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -105,6 +108,7 @@ def fmt(v):
 def clean(t):
     t=t.upper().strip().replace("/","").replace("-","").replace("_",""); t=re.sub(r"[^A-Z0-9]","",t)
     if t=="FARTCOINUSD": return "FARTCOIN"
+    if t=="ZEREBROUSDT": return "ZEREBRO"
     if t.endswith("USDT") and t[:-4] in CRYPTO: return t[:-4]
     return t
 
@@ -248,18 +252,18 @@ def get_premium_discount(kl):
         return "EQUILIBRIUM",pct
     except: return "EQUILIBRIUM",50
 
-def get_mtf_trend_grok(closes):
-    if len(closes)<30: return 0,"➡️ SIDEWAYS 😐",0,0,0,0
-    e9=ema(closes,9); e20=ema(closes,20); e50=ema(closes,50); e200=ema(closes,200) if len(closes)>=80 else ema(closes,50)
-    if e200==0: e200=e50
+def get_mtf_trend(closes):
+    if len(closes)<30: return 0,"➡️ SIDEWAYS 😐"
+    e20=ema(closes,20); e50=ema(closes,50); e200=ema(closes,200) if len(closes)>=80 else ema(closes,50)
     live=closes[-1]
-    if live>e9>e20>e50>e200: return 80,"🟢 STRONG UP 🚀 GOLDEN",e9,e20,e50,e200
-    if live>e20>e50 and e9>e20: return 50,"⬆️ UPTREND 💹",e9,e20,e50,e200
-    if live>e50 and live>e200: return 20,"↗️ WEAK UP 🙂",e9,e20,e50,e200
-    if live<e9<e20<e50<e200: return -80,"🔴 STRONG DOWN 💥 DEATH",e9,e20,e50,e200
-    if live<e20<e50 and e9<e20: return -50,"⬇️ DOWNTREND 😨",e9,e20,e50,e200
-    if live<e50 or live<e200: return -20,"↘️ WEAK DOWN 😕",e9,e20,e50,e200
-    return 0,"➡️ SIDEWAYS 😐",e9,e20,e50,e200
+    if e200==0: e200=e50
+    if live>e20>e50>e200: return 80,"🟢 STRONG UP 🚀"
+    if live>e20>e50: return 50,"⬆️ UPTREND 💹"
+    if live>e50: return 20,"↗️ WEAK UP 🙂"
+    if live<e20<e50<e200: return -80,"🔴 STRONG DOWN 💥"
+    if live<e20<e50: return -50,"⬇️ DOWNTREND 😨"
+    if live<e50: return -20,"↘️ WEAK DOWN 😕"
+    return 0,"➡️ SIDEWAYS 😐"
 
 def volume_check(kl):
     if len(kl)<15: return -100,"📊 Vol N/A"
@@ -276,8 +280,6 @@ def detect_candle_signal(kl):
         if c2["c"]<c2["o"] and c3["c"]>c3["o"] and c3["o"]<=c2["c"] and c3["c"]>=c2["o"]: return "🐂 BULLISH ENGULFING BUY",30
         if c3["h"]-max(c3["o"],c3["c"]) > (c3["h"]-c3["l"])*0.6: return "⭐ SHOOTING STAR SELL",-20
         if min(c3["o"],c3["c"])-c3["l"] > (c3["h"]-c3["l"])*0.6: return "🔨 HAMMER BUY",20
-        if c3["c"]>c2["c"] and c3["l"]>c2["l"]: return "📈 HIGHER LOW BUY",15
-        if c3["c"]<c2["c"] and c3["h"]<c2["h"]: return "📉 LOWER HIGH SELL",-15
         return "NONE",0
     except: return "NONE",0
 
@@ -306,19 +308,12 @@ def detect_order_block(kl):
         else: return {"level":last["h"],"low":last["l"],"high":last["h"]*1.002,"type":"🟩 BULLISH OB","side":"BUY"}
     except: return None
 
-def smart_sl_tp_grok(entry, ob, side, atr_val, lev, swing_low, swing_high):
+def smart_sl_tp_quick(entry, ob, fvg, side, atr_val, lev):
     try:
         liq_dist_pct = 1.0/lev * 100
-        max_sl_pct = min(liq_dist_pct * 0.55, 2.0)
-        atr_sl = atr_val * 1.5
-        sl_dist = max(entry * max_sl_pct / 100, atr_sl)
+        max_sl_pct = min(liq_dist_pct * 0.55, 1.8 if lev==15 else 2.2)
+        sl_dist = entry * max_sl_pct / 100
         sl = entry - sl_dist if side=="BUY" else entry + sl_dist
-        if side=="BUY" and swing_low:
-            struct_sl = swing_low * 0.998 - atr_val*0.2
-            if abs(entry-struct_sl)/entry*100 <= max_sl_pct: sl = min(sl, struct_sl)
-        if side=="SELL" and swing_high:
-            struct_sl = swing_high * 1.002 + atr_val*0.2
-            if abs(struct_sl-entry)/entry*100 <= max_sl_pct: sl = max(sl, struct_sl)
         if ob and ob["side"]==side:
             if side=="BUY":
                 ob_sl = ob["low"]*0.998 - atr_val*0.3
@@ -326,15 +321,15 @@ def smart_sl_tp_grok(entry, ob, side, atr_val, lev, swing_low, swing_high):
             else:
                 ob_sl = ob["high"]*1.002 + atr_val*0.3
                 if 0.5 <= abs(ob_sl-entry)/entry*100 <= max_sl_pct: sl = ob_sl
-        risk = abs(entry-sl)
-        tp1 = entry + risk*1.5 if side=="BUY" else entry - risk*1.5
-        tp2 = entry + risk*2.5 if side=="BUY" else entry - risk*2.5
-        tp3 = entry + risk*3.5 if side=="BUY" else entry - risk*3.5
+        # QUICK TP - 1.0x for fast scalp like WLD +10%
+        tp1=entry + atr_val*1.0 if side=="BUY" else entry - atr_val*1.0
+        tp2=entry + atr_val*2.0 if side=="BUY" else entry - atr_val*2.0
+        tp3=entry + atr_val*3.2 if side=="BUY" else entry - atr_val*3.2
         if side=="BUY" and sl>=entry: sl=entry*0.982
         if side=="SELL" and sl<=entry: sl=entry*1.018
         return sl,tp1,tp2,tp3
     except:
-        return (entry*0.982, entry*1.012, entry*1.022, entry*1.035) if side=="BUY" else (entry*1.018, entry*0.988, entry*0.978, entry*0.965)
+        return (entry*0.982, entry*1.01, entry*1.02, entry*1.032) if side=="BUY" else (entry*1.018, entry*0.99, entry*0.98, entry*0.968)
 
 def analyze_perfect(code, btc_trend=0, allow_choppy=False):
     try:
@@ -354,30 +349,18 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
         pd_zone,pd_pct=get_premium_discount(kl2)
         candle_sig,_=detect_candle_signal(kl2)
         ob=detect_order_block(kl2); fvg=detect_fvg(kl2)
-        s15,t15,e9_15,e20_15,e50_15,e200_15=get_mtf_trend_grok(closes15)
-        s1,t1,e9_1,e20_1,e50_1,e200_1=get_mtf_trend_grok(closes1)
-        s2,t2,e9_2,e20_2,e50_2,e200_2=get_mtf_trend_grok(closes2)
+        s15,t15=get_mtf_trend(closes15); s1,t1=get_mtf_trend(closes1); s2,t2=get_mtf_trend(closes2)
         vol_pct,vol_txt=volume_check(kl2)
-        swing_low = min([k["l"] for k in kl2[-20:-1]]) if len(kl2)>=20 else None
-        swing_high = max([k["h"] for k in kl2[-20:-1]]) if len(kl2)>=20 else None
 
         if (s15<0 and s1<0 and s2<0) or (s15>0 and s1>0 and s2>0): align=3
         elif (s1<0 and s2<0) or (s1>0 and s2>0): align=2
         else: align=1
 
-        # === FINAL FIX - BALANCED ===
-        if vol_pct < -70:
-            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Vol {vol_pct:.0f}% VERY LOW - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-        if e200_2==0:
-            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"EMA200 0 invalid - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-
         if not allow_choppy:
-            if adx < MIN_ADX:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"ADX {adx:.0f} < {MIN_ADX} NO TREND - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if vol_pct < MIN_VOL_PCT:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Vol {vol_pct:.0f}% < {MIN_VOL_PCT}% LOW - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if align < 2 and vol_pct < 0:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Align {align}/3 + Vol {vol_pct:.0f}% WEAK - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if adx < MIN_ADX and vol_pct < -30:
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"ADX {adx:.0f} + Vol {vol_pct:.0f}% both low - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if vol_pct < -85:
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Vol {vol_pct:.0f}% < -85% VERY LOW - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
 
         forced_direction = None
         if align==3:
@@ -386,85 +369,74 @@ def analyze_perfect(code, btc_trend=0, allow_choppy=False):
 
         if forced_direction: direction = forced_direction
         else:
-            if live > e200_2 and s2>=0: direction="BUY"
-            elif live < e200_2 and s2<0: direction="SELL"
-            else: direction="BUY" if s2>=0 else "SELL"
+            direction="BUY" if s2>=0 else "SELL"
+            if ob and align>=2 and not allow_choppy: 
+                if (s2>0 and ob["side"]=="BUY") or (s2<0 and ob["side"]=="SELL"):
+                    direction=ob["side"]
 
         if not allow_choppy:
-            if direction=="BUY" and live < e200_2*0.992:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BUY but Price < EMA200 {fmt(e200_2)} BEAR - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if direction=="SELL" and live > e200_2*1.008:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"SELL but Price > EMA200 {fmt(e200_2)} BULL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            # BLOCK ADA TRAP
-            if "LOWER HIGH SELL" in candle_sig and direction=="BUY":
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"CANDLE LOWER HIGH SELL but BUY - SKIP like ADA","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if "HIGHER LOW BUY" in candle_sig and direction=="SELL":
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"CANDLE HIGHER LOW BUY but SELL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if "BEARISH" in candle_sig and direction=="BUY":
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"CANDLE {candle_sig} BEAR but BUY - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if "BULLISH" in candle_sig and direction=="SELL":
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"CANDLE {candle_sig} BULL but SELL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if direction=="BUY" and pd_pct > MAX_PREM:
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BUY in PREMIUM {pd_pct:.0f}% >{MAX_PREM}% TOP - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if direction=="SELL" and pd_pct < MIN_DISC:
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"SELL in DISCOUNT {pd_pct:.0f}% <{MIN_DISC}% BOTTOM - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if "BEARISH ENGULFING" in candle_sig and direction=="BUY":
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BEARISH ENGULFING SELL but BUY - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if "BULLISH ENGULFING" in candle_sig and direction=="SELL":
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BULLISH ENGULFING BUY but SELL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if "SHOOTING STAR" in candle_sig and direction=="BUY":
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"SHOOTING STAR SELL but BUY - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
+            if "HAMMER" in candle_sig and direction=="SELL":
+                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"HAMMER BUY but SELL - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
             if fvg and fvg["side"]!=direction:
                 return {"error":False,"code":code,"perfect":False,"perfect_reason":f"FVG {fvg['type']} vs {direction} MISMATCH - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if ob and ob["side"]!=direction:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"OB {ob['type']} vs {direction} MISMATCH - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if direction=="BUY" and pd_pct > MAX_PREM:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"BUY PREMIUM {pd_pct:.0f}% >{MAX_PREM}% TOP - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
-            if direction=="SELL" and pd_pct < MIN_DISC:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"SELL DISCOUNT {pd_pct:.0f}% <{MIN_DISC}% BOTTOM - SKIP","vol_pct":vol_pct,"align_score":align,"conf":0,"adx":adx}
 
         score=0; reasons=[]
-        if align==3: score+=25; reasons.append(f"Align 3/3 {direction} +25")
-        elif align==2: score+=12; reasons.append("Align 2/3 +12")
-        elif align==1: score+=5; reasons.append("Align 1/3 +5")
+        if align==3: score+=30; reasons.append(f"Align 3/3 {direction} +30")
+        elif align==2: score+=15; reasons.append("Align 2/3 +15")
+        else: score+=5; reasons.append(f"Align {align}/3 +5")
 
         if adx>=25: score+=15; reasons.append(f"ADX {adx:.0f} +15")
-        elif adx>=15: score+=10; reasons.append(f"ADX {adx:.0f} +10")
+        elif adx>=18: score+=10; reasons.append(f"ADX {adx:.0f} +10")
+        elif adx>=12: score+=5; reasons.append(f"ADX {adx:.0f} +5")
 
-        if direction=="BUY" and 35<=rsi<=50: score+=15; reasons.append(f"RSI {rsi:.0f} pullback +15")
-        elif direction=="SELL" and 50<=rsi<=65: score+=15; reasons.append(f"RSI {rsi:.0f} pullback +15")
-        elif direction=="BUY" and rsi<45: score+=8; reasons.append(f"RSI {rsi:.0f} +8")
-        elif direction=="SELL" and rsi>55: score+=8; reasons.append(f"RSI {rsi:.0f} +8")
+        if direction=="BUY" and rsi<45: score+=15; reasons.append(f"RSI {rsi:.0f} oversold +15")
+        elif direction=="SELL" and rsi>55: score+=15; reasons.append(f"RSI {rsi:.0f} overbought +15")
+        elif direction=="BUY" and rsi<50: score+=8; reasons.append(f"RSI {rsi:.0f} +8")
+        elif direction=="SELL" and rsi>50: score+=8; reasons.append(f"RSI {rsi:.0f} +8")
 
-        if direction=="BUY" and live>e200_2: score+=10; reasons.append(f"Price>EMA200 +10")
-        elif direction=="SELL" and live<e200_2: score+=10; reasons.append(f"Price<EMA200 +10")
-
-        if direction=="BUY" and "BULLISH" in macd_status: score+=15; reasons.append(f"MACD {macd_status} +15")
-        elif direction=="SELL" and "BEARISH" in macd_status: score+=15; reasons.append(f"MACD {macd_status} +15")
-        elif "NEUTRAL" in macd_status: score+=5; reasons.append("MACD neutral +5")
-
-        if ob and ob["side"]==direction: score+=10; reasons.append(f"OB {ob['type']} +10")
+        if ob and ob["side"]==direction: score+=15; reasons.append(f"OB {ob['type']} match +15")
         if fvg and fvg["side"]==direction: score+=10; reasons.append(f"FVG {fvg['type']} +10")
-        if vol_pct>=20: score+=10; reasons.append(f"Vol {vol_pct:.0f}% +10")
-        elif vol_pct>=10: score+=5; reasons.append(f"Vol {vol_pct:.0f}% +5")
+        # QUICK TP PUMP BONUS - WLD +10% etc
+        if vol_pct>=100: score+=15; reasons.append(f"Vol {vol_pct:.0f}% PUMP +15 QUICK TP 🔥")
+        elif vol_pct>=20: score+=10; reasons.append(f"Vol {vol_pct:.0f}% +10")
+        elif vol_pct>=8: score+=5; reasons.append(f"Vol {vol_pct:.0f}% +5")
 
-        if direction=="BUY" and pd_zone=="DISCOUNT": score+=10; reasons.append(f"DISCOUNT {pd_pct:.0f}% +10")
-        elif direction=="SELL" and pd_zone=="PREMIUM": score+=10; reasons.append(f"PREMIUM {pd_pct:.0f}% +10")
+        if direction=="BUY" and pd_zone=="DISCOUNT": score+=15; reasons.append(f"DISCOUNT {pd_pct:.0f}% +15")
+        elif direction=="SELL" and pd_zone=="PREMIUM": score+=15; reasons.append(f"PREMIUM {pd_pct:.0f}% +15")
+        elif pd_zone=="EQUILIBRIUM": score+=5; reasons.append(f"EQUILIB {pd_pct:.0f}% +5")
+
+        if "ENGULFING" in candle_sig and ((direction=="BUY" and "BULLISH" in candle_sig) or (direction=="SELL" and "BEARISH" in candle_sig)): score+=10; reasons.append(f"{candle_sig} +10")
 
         score=max(0,min(100,score))
-        need = MIN_SCORE if not allow_choppy else MIN_ADAPTIVE
-        if not allow_choppy and score < need and vol_pct < 5:
-            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Score {score}/100 < {need} + Vol low","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx,"reasons":reasons}
-        if score < (MIN_CHOPPY if allow_choppy else MIN_ADAPTIVE if allow_choppy else MIN_SCORE):
-            if score < MIN_CHOPPY:
-                return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Score {score}/100 < {MIN_CHOPPY}","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx,"reasons":reasons}
+        if score < (MIN_SCORE if not allow_choppy else MIN_ADAPTIVE) and score < 25:
+            return {"error":False,"code":code,"perfect":False,"perfect_reason":f"Score {score}/100 < {MIN_SCORE} - SKIP","vol_pct":vol_pct,"align_score":align,"conf":score,"adx":adx,"reasons":reasons}
 
-        sl,tp1,tp2,tp3=smart_sl_tp_grok(live, ob, direction, atr, lev, swing_low, swing_high)
+        sl,tp1,tp2,tp3=smart_sl_tp_quick(live, ob, fvg, direction, atr, lev)
         big_bid,big_ask=get_whale_walls(sym); liq_txt=get_liq_hint(kl2)
         sl_pct=abs(sl-live)/live*100; tp1_pct=abs(tp1-live)/live*100; tp2_pct=abs(tp2-live)/live*100; tp3_pct=abs(tp3-live)/live*100
-        smc_txt=f"🕯️ {candle_sig} | MACD {macd_status} | {ob['type'] if ob else '🟨 OB None'} | {fvg['type'] if fvg else '⚖️ FVG None'} | EMA200 {fmt(e200_2)}"
-        if score >= GOD_MODE_SCORE: tag = "💀💀 GOD MODE GROK"
-        elif score >= 55: tag = "✅ STRONG GROK"
-        elif score >= 45: tag = "✅ BALANCED GROK"
-        else: tag = "⚠️ CHOPPY GROK"
-        return {"error":False,"code":code,"price":live,"rsi":rsi,"adx":adx,"atr":atr,"macd":macd_status,"pd_zone":pd_zone,"pd_pct":pd_pct,"dir":direction,"entry":live,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":lev,"conf":score,"score":score,"kl":kl2,"mtf_txt":f"⏱️ 15m {t15} | 1H {t1} | 2H {t2} [Align {align}/3] ADX {adx:.0f} | MACD {macd_status}","vol_txt":vol_txt,"vol_pct":vol_pct,"sl_dist_pct":sl_pct,"tp1_dist_pct":tp1_pct,"tp2_dist_pct":tp2_pct,"tp3_dist_pct":tp3_pct,"whale_txt":f"🐋 Walls ${big_bid/1000:.0f}k/${big_ask/1000:.0f}k | {liq_txt}","auto_stake":DEFAULT_STAKE,"align_score":align,"smc_txt":smc_txt,"ob":ob,"fvg":fvg,"perfect":True,"perfect_reason":f"{tag} SCORE {score}/100 - {' | '.join(reasons)}","reasons":reasons}
+        smc_txt=f"🕯️ {candle_sig} | {ob['type'] if ob else '🟨 OB None'} | {fvg['type'] if fvg else '⚖️ FVG None'} | {macd_status}"
+        if score >= GOD_MODE_SCORE: tag = "💀💀 GOD MODE QUICK TP"
+        elif score >= 50: tag = "✅ STRONG QUICK TP"
+        elif score >= 35: tag = "✅ BALANCED QUICK TP"
+        else: tag = "⚠️ CHOPPY QUICK TP $0.5"
+        return {"error":False,"code":code,"price":live,"rsi":rsi,"adx":adx,"atr":atr,"macd":macd_status,"pd_zone":pd_zone,"pd_pct":pd_pct,"dir":direction,"entry":live,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":lev,"conf":score,"score":score,"kl":kl2,"mtf_txt":f"⏱️ 15m {t15} | 1H {t1} | 2H {t2} [Align {align}/3] ADX {adx:.0f}","vol_txt":vol_txt,"vol_pct":vol_pct,"sl_dist_pct":sl_pct,"tp1_dist_pct":tp1_pct,"tp2_dist_pct":tp2_pct,"tp3_dist_pct":tp3_pct,"whale_txt":f"🐋 Walls ${big_bid/1000:.0f}k/${big_ask/1000:.0f}k | {liq_txt}","auto_stake":DEFAULT_STAKE,"align_score":align,"smc_txt":smc_txt,"ob":ob,"fvg":fvg,"perfect":True,"perfect_reason":f"{tag} SCORE {score}/100 - {' | '.join(reasons)}","reasons":reasons}
     except Exception as e:
         return {"error":True,"msg":f"❌ Bug {code}: {str(e)[:180]}"}
 
 def get_btc_trend():
     try:
         kl2=get_klines("BTCUSDT","2h")
-        s2,_,_,_,_,_=get_mtf_trend_grok([c["c"] for c in kl2])
+        s2,_=get_mtf_trend([c["c"] for c in kl2])
         return s2
     except: return 0
 
@@ -478,16 +450,16 @@ def generate_chart_perfect(r):
         ax.plot(e50, label="📙 EMA50", color="#FF9800", linewidth=0.9)
         ax.plot(e200, label="📕 EMA200", color="#9C27B0", linewidth=0.7, linestyle=":")
         ax.axhline(r["entry"], color="blue", linestyle="--", linewidth=1.5, label=f'🎯 Entry {fmt(r["entry"])}')
-        ax.axhline(r["sl"], color="red", linestyle="-", linewidth=1.6, label=f'🛑 SL {fmt(r["sl"])} ATR 1.5x')
-        ax.axhline(r["tp1"], color="#00C853", linestyle="-", linewidth=1.4, label=f'⚡ TP1 1.5R {fmt(r["tp1"])}')
-        ax.axhline(r["tp2"], color="#4CAF50", linestyle="-.", linewidth=1.2, label=f'🎯 TP2 2.5R {fmt(r["tp2"])}')
-        ax.axhline(r["tp3"], color="#00E676", linestyle=":", linewidth=1.2, label=f'🚀 TP3 3.5R {fmt(r["tp3"])}')
+        ax.axhline(r["sl"], color="red", linestyle="-", linewidth=1.6, label=f'🛑 SL {fmt(r["sl"])} SAFE')
+        ax.axhline(r["tp1"], color="#00C853", linestyle="-", linewidth=1.4, label=f'⚡ TP1 QUICK {fmt(r["tp1"])}')
+        ax.axhline(r["tp2"], color="#4CAF50", linestyle="-.", linewidth=1.2, label=f'🎯 TP2 {fmt(r["tp2"])}')
+        ax.axhline(r["tp3"], color="#00E676", linestyle=":", linewidth=1.2, label=f'🚀 TP3 {fmt(r["tp3"])}')
         if r.get("fvg"):
             ax.axhspan(r["fvg"]["bottom"], r["fvg"]["top"], color='gold', alpha=0.22, label=f'⚖️ {r["fvg"]["type"]}')
         if r.get("ob"):
             lvl=r["ob"]["high"] if r["ob"]["side"]=="SELL" else r["ob"]["low"]
             ax.axhline(lvl, color="orange", linestyle="-.", linewidth=1.6, label=f'🟨 {r["ob"]["type"]}')
-        ax.set_title(f'💀 V18.5.2 FINAL {r["code"]} {r["dir"]} SCORE {r["conf"]}/100 | {r["lev"]}x ${r["auto_stake"]} | RSI {r["rsi"]:.0f} ADX {r["adx"]:.0f} | {r["macd"]} 👌', fontsize=10, fontweight='bold')
+        ax.set_title(f'💀 QUICK TP {r["code"]} {r["dir"]} SCORE {r["conf"]}/100 | {r["lev"]}x ${r["auto_stake"]} | RSI {r["rsi"]:.0f} ADX {r["adx"]:.0f} | {r["pd_zone"]} 👌', fontsize=11, fontweight='bold')
         ax.set_ylabel("Price 💵"); ax.grid(True, alpha=0.3); ax.legend(fontsize=7, loc='upper left', ncol=2)
         plt.tight_layout()
         buf=io.BytesIO(); plt.savefig(buf, format='png', dpi=160); buf.seek(0); plt.close(fig); return buf
@@ -507,11 +479,11 @@ def coins_kb_perfect(active_override=None, view="ALL"):
         if daily['losses'] >= MAX_DAILY_LOSS:
             btns.append([InlineKeyboardButton(f"🛑 DAILY LIMIT {daily['losses']} LOSS - REST TODAY",callback_data="SHOW_DAILY")])
         else:
-            btns.append([InlineKeyboardButton(f"🔍 SCAN 27 FINAL FIXED {MIN_SCORE}+ ${DEFAULT_STAKE} - Trade {daily['trades']+1}/3 💀",callback_data="SCAN_BEST")])
+            btns.append([InlineKeyboardButton(f"🔍 SCAN 35 QUICK TP {MIN_SCORE}+ ${DEFAULT_STAKE} - Trade {daily['trades']+1}/3 💀",callback_data="SCAN_BEST")])
     btns.append([InlineKeyboardButton(f"📊 Daily: {daily['wins']}W/{daily['losses']}L P&L ${daily['pnl']:.2f}",callback_data="SHOW_DAILY")])
-    btns.append([InlineKeyboardButton("⚡ FAST 27",callback_data="MENU_FAST"), InlineKeyboardButton("🐢 SLOW 16",callback_data="MENU_SLOW"), InlineKeyboardButton("📋 ALL 43",callback_data="MENU_ALL")])
+    btns.append([InlineKeyboardButton("⚡ FAST 35 QUICK",callback_data="MENU_FAST"), InlineKeyboardButton("🐢 SLOW 20",callback_data="MENU_SLOW"), InlineKeyboardButton("📋 ALL 57",callback_data="MENU_ALL")])
     if view in ["FAST","ALL"]:
-        btns.append([InlineKeyboardButton(f"--- ⚡ FAST 27 ${DEFAULT_STAKE} FINAL ---",callback_data="IGNORE")])
+        btns.append([InlineKeyboardButton(f"--- ⚡ FAST 35 $1.0 QUICK TP ---",callback_data="IGNORE")])
         row=[]
         for c in FAST_LIST:
             lev=get_lev(c)
@@ -519,7 +491,7 @@ def coins_kb_perfect(active_override=None, view="ALL"):
             if len(row)==3: btns.append(row); row=[]
         if row: btns.append(row)
     if view in ["SLOW","ALL"]:
-        btns.append([InlineKeyboardButton(f"--- 🐢 SLOW 16 ---",callback_data="IGNORE")])
+        btns.append([InlineKeyboardButton(f"--- 🐢 SLOW 20 ---",callback_data="IGNORE")])
         row=[]
         for c in SLOW_LIST:
             lev=get_lev(c)
@@ -528,7 +500,7 @@ def coins_kb_perfect(active_override=None, view="ALL"):
         if row: btns.append(row)
     if view=="ALL":
         all_list=list(CRYPTO.keys())
-        btns.append([InlineKeyboardButton(f"--- 📋 ALL 43 ---",callback_data="IGNORE")])
+        btns.append([InlineKeyboardButton(f"--- 📋 ALL 57 ---",callback_data="IGNORE")])
         row=[]
         for c in all_list:
             lev=get_lev(c)
@@ -539,7 +511,7 @@ def coins_kb_perfect(active_override=None, view="ALL"):
 
 async def setup_menu(app):
     try:
-        cmds=[BotCommand("start","💀 Main V18.5.2"),BotCommand("fast","⚡ FAST 27"),BotCommand("slow","🐢 SLOW 16"),BotCommand("all","📋 ALL 43"),BotCommand("scan","🔍 SCAN"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
+        cmds=[BotCommand("start","💀 Main V18.7"),BotCommand("fast","⚡ FAST 35 QUICK"),BotCommand("slow","🐢 SLOW 20"),BotCommand("all","📋 ALL 57"),BotCommand("scan","🔍 SCAN QUICK"),BotCommand("daily","📊 Daily"),BotCommand("monitor","📡 Check"),BotCommand("close","❌ Close")]
         await app.bot.set_my_commands(cmds)
     except: pass
 
@@ -549,46 +521,41 @@ def background_scan(chat_id):
     try:
         daily=get_daily()
         if daily['losses'] >= MAX_DAILY_LOSS:
-            msg=f"🛑 *DAILY LIMIT*\nLosses {daily['losses']}/2 today. Paused. P&L ${daily['pnl']:.2f} 🙏"
+            msg=f"🛑 *DAILY LIMIT REACHED*\nLosses {daily['losses']}/2 today. Bot paused.\nP&L ${daily['pnl']:.2f} - Rest 🙏"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
             return
         btc=get_btc_trend()
         scan_list=FAST_LIST
-        print(f"💀 FINAL FIXED SCAN START {len(scan_list)} V18.5.2")
-
-        # TIER 1: 55+
+        print(f"💀 QUICK TP SCAN START {len(scan_list)} V18.7")
         for code in scan_list:
             try:
                 r=analyze_perfect(code, btc, False)
-                if r.get("perfect") and r.get("conf",0)>=MIN_SCORE:
+                if r.get("perfect"):
                     all_found.append(r)
-                    if not best or r["conf"]>best["conf"]: best=r
+                    if not best or r.get("conf",0) > best.get("conf",0): best=r
             except: continue
             time.sleep(0.12)
 
-        # TIER 2: 45+ if no best
         if not best:
-            print("TIER2 45+")
+            print(f"ADAPTIVE fallback {MIN_ADAPTIVE}+")
             for code in scan_list:
                 try:
-                    r=analyze_perfect(code, btc, True)
-                    if r.get("perfect") and r.get("conf",0)>=MIN_ADAPTIVE:
-                        all_found.append(r)
-                        if not best or r["conf"]>best["conf"]: best=r
+                    r2=analyze_perfect(code, btc, True)
+                    if r2.get("perfect"):
+                        all_found.append(r2)
+                        if not best or r2.get("conf",0) > best.get("conf",0): best=r2
                 except: continue
                 time.sleep(0.12)
 
-        # TIER 3: GUARANTEED 35+
         if not best:
-            print("TIER3 GUARANTEED 35+")
+            print("ULTRA GUARANTEED")
             cands=[]
             for code in scan_list:
                 try:
                     r=analyze_perfect(code, btc, True)
-                    if r.get("conf",0)>=MIN_CHOPPY:
+                    if r.get("conf",0)>=20:
                         cands.append(r)
                 except: continue
-                time.sleep(0.08)
             if cands:
                 cands.sort(key=lambda x: x["conf"], reverse=True)
                 best=cands[0]
@@ -597,27 +564,33 @@ def background_scan(chat_id):
         print(f"SCAN DONE found {len(all_found)} best {best['code'] if best else 'None'}")
 
         if not best:
-            msg=f"⚠️ *Market super choppy - All 27 na trap*\nEven after 3 tiers, all have bear/bull mismatch like ADA -99% + LOWER HIGH SELL. Bot protected you! Rest 30min 🙏"
+            msg=f"⚠️ *Market super choppy - Even WLD +10% no clear setup*\nScanned 35 coins. Try again 15min. 🙏"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
             return
 
         existing=get_active()
         if existing and existing.get("status")=="OPEN":
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {existing.get('coin')} still OPEN"},timeout=10)
+            msg=f"⚠️ Active {existing.get('coin')} still OPEN - Close first."
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg},timeout=10)
             return
 
         r=best
-        stake = DEFAULT_STAKE if r["conf"]>=55 else REDUCED_STAKE if r["conf"]>=45 else CHOPPY_STAKE
+        if r["conf"] < 40: stake=CHOPPY_STAKE
+        else: stake=REDUCED_STAKE if daily.get("last_result")=="LOSS" else DEFAULT_STAKE
         r["auto_stake"]=stake
         set_active({"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"start_time":time.time()})
         lev=r["lev"]; loss=stake*r["sl_dist_pct"]*lev/100; p1=stake*r["tp1_dist_pct"]*lev/100; p2=stake*r["tp2_dist_pct"]*lev/100; p3=stake*r["tp3_dist_pct"]*lev/100
-        mode_txt = "💀💀 GOD MODE" if r['conf']>=80 else "✅ STRONG GROK" if r['conf']>=55 else "✅ BALANCED GROK" if r['conf']>=45 else "⚠️ CHOPPY GROK $0.5"
-        txt=(f"💀 *{mode_txt} SCORE {r['conf']}/100 {r['code']} Trade {get_daily()['trades']+1}/3* {'🟢 BUY LONG 🚀' if r['dir']=='BUY' else '🔴 SELL SHORT 💥'} ${stake} {lev}x\n"
+        daily=get_daily()
+        if r['conf'] >= GOD_MODE_SCORE: mode_txt = "💀💀 GOD MODE QUICK TP"
+        elif r['conf'] >= 50: mode_txt = "✅ STRONG QUICK TP"
+        elif r['conf'] >= 35: mode_txt = "✅ BALANCED QUICK TP"
+        else: mode_txt = "⚠️ CHOPPY QUICK TP $0.5"
+        txt=(f"💀 *{mode_txt} SCORE {r['conf']}/100 {r['code']} Trade {daily['trades']+1}/3* {'🟢 BUY LONG 🚀' if r['dir']=='BUY' else '🔴 SELL SHORT 💥'} ${stake} {lev}x\n"
              f"💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} | {r['macd']}\n"
-             f"⚡ TP1 {fmt(r['tp1'])} 1.5R (+{r['tp1_dist_pct']*lev:.0f}% ${p1:.2f})\n"
-             f"🎯 TP2 {fmt(r['tp2'])} 2.5R (+{r['tp2_dist_pct']*lev:.0f}% ${p2:.2f})\n"
-             f"🚀 TP3 {fmt(r['tp3'])} 3.5R (+{r['tp3_dist_pct']*lev:.0f}% ${p3:.2f})\n"
-             f"🛑 SL {fmt(r['sl'])} ATR 1.5x (-{r['sl_dist_pct']*lev:.0f}% -${loss:.2f}) SAFE 👌\n"
+             f"⚡ TP1 QUICK {fmt(r['tp1'])} (+{r['tp1_dist_pct']*lev:.0f}% ${p1:.2f}) FAST SCALP\n"
+             f"🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_dist_pct']*lev:.0f}% ${p2:.2f})\n"
+             f"🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_dist_pct']*lev:.0f}% ${p3:.2f})\n"
+             f"🛑 SL {fmt(r['sl'])} (-{r['sl_dist_pct']*lev:.0f}% -${loss:.2f}) SAFE 👌\n"
              f"{r['smc_txt']}\n{r['mtf_txt']}\n{r['vol_txt']} | {r['whale_txt']}\n✅ {r['perfect_reason']} | Found {len(all_found)} from {len(scan_list)}")
         try:
             buf=generate_chart_perfect(r)
@@ -628,25 +601,25 @@ def background_scan(chat_id):
         except:
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10)
     except Exception as e:
-        print(f"BG Scan err {e}")
+        print(f"BG Scan critical {e}")
 
 async def start(u,c):
     save_chat_id(u.message.chat.id)
-    await u.message.reply_text(f"💀 *V18.5.2 FINAL FIXED - GUARANTEED + NO ADA TRAP 👌*\n✅ Tier1 55+ $1.0 | Tier2 45+ $0.5 | Tier3 35+ $0.5\n✅ BLOCK LOWER HIGH SELL for BUY like ADA\n✅ BLOCK Vol -70% + EMA200 0\n✅ Always 1 trade - No more 'No trade found'",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
-async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text(f"⚡ FAST 27 FINAL FIXED {MIN_SCORE}+",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
-async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 SLOW 16 FINAL",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
-async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 ALL 43 FINAL",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text(f"💀 *V18.7 QUICK TP - 57 COINS + GUARANTEED 👌*\n✅ Added WLD +10%, ZEREBRO +15%, TRUMP, HYPE, ONDO, APT from your screenshot\n✅ TP1 1.0x ATR quick scalp - 5-10min TP\n✅ Vol 100%+ PUMP bonus +15 for quick TP\n✅ Score 30+ always 1 trade - No more empty",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def fast_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text(f"⚡ FAST 35 QUICK TP {MIN_SCORE}+ - WLD, ZEREBRO, TRUMP, HYPE etc",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="FAST"))
+async def slow_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("🐢 SLOW 20",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="SLOW"))
+async def all_cmd(u,c): save_chat_id(u.message.chat.id); await u.message.reply_text("📋 ALL 57 QUICK TP",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 async def scan_cmd(u,c):
     save_chat_id(u.message.chat.id); chat_id=u.message.chat.id
     daily=get_daily()
     if daily['losses'] >= MAX_DAILY_LOSS:
         await u.message.reply_text(f"🛑 Daily loss limit {daily['losses']} reached - Paused. P&L ${daily['pnl']:.2f} 🙏")
         return
-    await u.message.reply_text(f"🔍 FINAL FIXED SCANNING 27 coins...\nTier1 55+ $1.0 | Tier2 45+ $0.5 | Tier3 35+ Guaranteed - No more empty 👌")
+    await u.message.reply_text(f"🔍 QUICK TP SCANNING 35 coins...\nWLD +10%, ZEREBRO +15%, TRUMP, HYPE, ONDO etc - Fast scalp TP1 1.0x 👌")
     threading.Thread(target=background_scan, args=(chat_id,), daemon=True).start()
 async def daily_cmd(u,c):
     save_chat_id(u.message.chat.id); daily=get_daily()
-    await u.message.reply_text(f"📊 *V18.5.2 FINAL Daily ${DEFAULT_STAKE}* {daily['date']}\n🏆 Wins {daily['wins']} ❌ Loss {daily['losses']} 📈 Trades {daily['trades']}/3 💰 P&L ${daily['pnl']:.2f}\nLast: {daily.get('last_result','')}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
+    await u.message.reply_text(f"📊 *V18.7 Daily ${DEFAULT_STAKE}* {daily['date']}\n🏆 Wins {daily['wins']} ❌ Loss {daily['losses']} 📈 Trades {daily['trades']}/3 💰 P&L ${daily['pnl']:.2f}\nLast: {daily.get('last_result','')} | Stake next: ${REDUCED_STAKE if daily.get('last_result')=='LOSS' else DEFAULT_STAKE}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL"))
 async def monitor_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
     if not active or active.get("status")!="OPEN":
@@ -657,11 +630,11 @@ async def monitor_cmd(u,c):
     pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
     pnl=stake*pnl_pct/100; status="💚 PROFIT 🤑" if pnl_pct>=0 else "❤️ LOSS 😢"
     emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-    txt=(f"📡 *V18.5.2 FINAL {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\n💰 Entry {fmt(entry)} Now {fmt(price)}\n🛑 SL {fmt(sl)} | ⚡ TP1 {fmt(tp1)} | 🎯 TP2 {fmt(tp2)} | 🚀 TP3 {fmt(tp3)}\n💵 P&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+    txt=(f"📡 *V18.7 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\n💰 Entry {fmt(entry)} Now {fmt(price)}\n🛑 SL {fmt(sl)} | ⚡ TP1 QUICK {fmt(tp1)} | 🎯 TP2 {fmt(tp2)} | 🚀 TP3 {fmt(tp3)}\n💵 P&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
     await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL"))
 async def close_cmd(u,c):
     save_chat_id(u.message.chat.id); active=get_active()
-    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.5.2 FINAL FIXED 👌",reply_markup=coins_kb_perfect(view="ALL"))
+    if active: clear_active(); await u.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.7 QUICK TP 👌",reply_markup=coins_kb_perfect(view="ALL"))
     else: await u.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL"))
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); d=q.data
@@ -672,7 +645,7 @@ async def btn_handler(u,c):
             await q.message.reply_text(f"🛑 Daily loss limit {daily['losses']} reached - Paused 🙏",reply_markup=coins_kb_perfect(view="ALL"))
             return
     if d in ["MENU_FAST","MENU_SLOW","MENU_ALL"]:
-        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V18.5.2 FINAL FIXED 👌",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
+        view=d.split("_")[1]; await q.message.reply_text(f"📋 {view} MENU V18.7 QUICK TP 👌",parse_mode="Markdown",reply_markup=coins_kb_perfect(view=view)); return
     if d=="SHOW_DAILY":
         await q.message.reply_text(f"📊 Daily {daily['date']} Wins {daily['wins']} Loss {daily['losses']} Trades {daily['trades']}/3 P&L ${daily['pnl']:.2f} Last {daily.get('last_result','')}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
     if d in ["MONITOR_LIVE","CHECK_NOW"]:
@@ -685,15 +658,15 @@ async def btn_handler(u,c):
         pnl_pct=(price-entry)/entry*100*lev if dir_=="BUY" else (entry-price)/entry*100*lev
         pnl=stake*pnl_pct/100; status="💚 PROFIT 🤑" if pnl_pct>=0 else "❤️ LOSS"
         emoji="🟢 BUY" if dir_=="BUY" else "🔴 SELL"
-        txt=(f"📡 *V18.5.2 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)}\nSL {fmt(sl)} | TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
+        txt=(f"📡 *V18.7 {coin} {emoji} {active.get('conf',0)}/100* ${stake} {lev}x\nEntry {fmt(entry)} Now {fmt(price)}\nSL {fmt(sl)} | TP1 {fmt(tp1)} | TP2 {fmt(tp2)} | TP3 {fmt(tp3)}\nP&L {pnl_pct:.2f}% ${pnl:+.2f} {status}")
         await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=coins_kb_perfect(active,view="ALL")); return
     if d=="CLOSE_TRADE":
         active=get_active()
-        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.5.2 FINAL 👌",reply_markup=coins_kb_perfect(view="ALL"))
+        if active: clear_active(); await q.message.reply_text(f"✅ Closed {active.get('coin')} - Ready V18.7 QUICK TP 👌",reply_markup=coins_kb_perfect(view="ALL"))
         else: await q.message.reply_text("❌ No active",reply_markup=coins_kb_perfect(view="ALL")); return
     if d=="SCAN_BEST":
         chat_id=q.message.chat.id
-        await q.message.reply_text(f"🔍 FINAL FIXED SCANNING 27... Guaranteed trade 👌")
+        await q.message.reply_text(f"🔍 QUICK TP SCANNING 35... WLD, ZEREBRO etc 👌")
         threading.Thread(target=background_scan, args=(chat_id,), daemon=True).start()
         return
     if d.startswith("C_"):
@@ -702,16 +675,16 @@ async def btn_handler(u,c):
             await q.message.reply_text(f"{r.get('msg')}",reply_markup=coins_kb_perfect(view="ALL")); return
         if not r.get("perfect"):
             r2=analyze_perfect(code, btc, True)
-            if r2.get("perfect") and r2.get("conf",0)>=MIN_ADAPTIVE: r=r2
-            else: await q.message.reply_text(f"⚠️ *SKIP {code}* - {r.get('perfect_reason')}\n📊 Vol {r.get('vol_pct'):.0f}% | Align {r.get('align_score')}/3 | Score {r.get('conf',0)}/100 ADX {r.get('adx',0):.0f} | MACD {r.get('macd','N/A')}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
-        stake=CHOPPY_STAKE if r["conf"]<45 else (REDUCED_STAKE if daily.get("last_result")=="LOSS" else DEFAULT_STAKE)
+            if r2.get("perfect"): r=r2
+            else: await q.message.reply_text(f"⚠️ *SKIP {code}* - {r.get('perfect_reason')}\n📊 Vol {r.get('vol_pct'):.0f}% | Align {r.get('align_score')}/3 | Score {r.get('conf',0)}/100 ADX {r.get('adx',0):.0f}",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
+        stake=CHOPPY_STAKE if r["conf"]<35 else (REDUCED_STAKE if daily.get("last_result")=="LOSS" else DEFAULT_STAKE)
         r["auto_stake"]=stake
         active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"start_time":time.time()}
         set_active(active_data); buf=generate_chart_perfect(r)
         lev=r["lev"]; sl_lev=r["sl_dist_pct"]*lev; tp1_lev=r["tp1_dist_pct"]*lev; tp2_lev=r["tp2_dist_pct"]*lev; tp3_lev=r["tp3_dist_pct"]*lev
         loss=stake*sl_lev/100; p1=stake*tp1_lev/100; p2=stake*tp2_lev/100; p3=stake*tp3_lev/100
         emoji="🟢 BUY LONG 🚀" if r['dir']=="BUY" else "🔴 SELL SHORT 💥"
-        txt=(f"💀 *V18.5.2 FINAL SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} | {r['macd']}\n⚡ TP1 {fmt(r['tp1'])} 1.5R (+{tp1_lev:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} 2.5R (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} 3.5R (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} ATR 1.5x (-{sl_lev:.0f}% -${loss:.2f}) SAFE 👌\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']} | {r['vol_txt']}\n✅ {r['perfect_reason']}")
+        txt=(f"💀 *V18.7 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {lev}x* {emoji}\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f}\n⚡ TP1 QUICK {fmt(r['tp1'])} (+{tp1_lev:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{tp2_lev:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{tp3_lev:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{sl_lev:.0f}% -${loss:.2f}) SAFE 👌\n{r['smc_txt']}\n{r['mtf_txt']}\n{r['whale_txt']} | {r['vol_txt']}\n✅ {r['perfect_reason']}")
         kb=coins_kb_perfect(active_data,view="ALL")
         if buf: await q.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
@@ -729,19 +702,19 @@ async def txt_handler(u,c):
         await u.message.reply_text(f"{r.get('msg')}",reply_markup=coins_kb_perfect(view="ALL")); return
     if not r.get("perfect"):
         r2=analyze_perfect(code, btc, True)
-        if r2.get("perfect") and r2.get("conf",0)>=MIN_ADAPTIVE: r=r2
+        if r2.get("perfect"): r=r2
         else: await u.message.reply_text(f"⚠️ *SKIP {code}* - {r.get('perfect_reason')}\nScore {r.get('conf',0)}/100",parse_mode="Markdown",reply_markup=coins_kb_perfect(view="ALL")); return
-    stake=CHOPPY_STAKE if r["conf"]<45 else (REDUCED_STAKE if daily.get("last_result")=="LOSS" else DEFAULT_STAKE)
+    stake=CHOPPY_STAKE if r["conf"]<35 else (REDUCED_STAKE if daily.get("last_result")=="LOSS" else DEFAULT_STAKE)
     r["auto_stake"]=stake
     active_data={"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"start_time":time.time()}
     set_active(active_data); buf=generate_chart_perfect(r)
-    txt=f"💀 *V18.5.2 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {r['lev']}x @ {fmt(r['entry'])}* 👌\n{r['smc_txt']}\n✅ {r['perfect_reason']}"
+    txt=f"💀 *V18.7 SCORE {r['conf']}/100 {r['code']} {r['dir']} ${stake} {r['lev']}x @ {fmt(r['entry'])}* QUICK TP 👌\n{r['smc_txt']}\n✅ {r['perfect_reason']}"
     kb=coins_kb_perfect(active_data,view="ALL")
     if buf: await u.message.reply_photo(photo=buf, caption=txt, parse_mode="Markdown", reply_markup=kb)
     else: await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb)
 
 def monitor_loop():
-    print("Monitor started V18.5.2 FINAL")
+    print("Monitor started V18.7 QUICK TP")
     last_ping=0
     while True:
         try:
@@ -763,17 +736,17 @@ def monitor_loop():
             if dir_=="BUY":
                 if price>=tp3: hit="TP3 MOON 🌙"
                 elif price>=tp2: hit="TP2"
-                elif price>=tp1: hit="TP1"
+                elif price>=tp1: hit="TP1 QUICK"
                 elif price<=sl: hit="SL"
             else:
                 if price<=tp3: hit="TP3 MOON 🌙"
                 elif price<=tp2: hit="TP2"
-                elif price<=tp1: hit="TP1"
+                elif price<=tp1: hit="TP1 QUICK"
                 elif price>=sl: hit="SL"
             if hit:
                 if "TP" in hit:
                     pnl_pct=abs((tp1 if "TP1" in hit else tp2 if "TP2" in hit else tp3)-entry)/entry*100*lev; pnl=stake*pnl_pct/100
-                    msg=f"💀 {hit}! {coin} +{pnl_pct:.0f}% +${pnl:.2f}"; update_daily("WIN",pnl,coin); clear_active()
+                    msg=f"💀 {hit}! {coin} +{pnl_pct:.0f}% +${pnl:.2f} QUICK TP!"; update_daily("WIN",pnl,coin); clear_active()
                 else:
                     pnl_pct=abs(sl-entry)/entry*100*lev; pnl=stake*pnl_pct/100
                     msg=f"💀 SL {coin} -{pnl_pct:.0f}% -${pnl:.2f}"; update_daily("LOSS",-pnl,coin); clear_active()
@@ -788,7 +761,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("fast",fast_cmd)); a.add_handler(CommandHandler("slow",slow_cmd)); a.add_handler(CommandHandler("all",all_cmd)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("close",close_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler)); a.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, txt_handler))
-    print("Bot V18.5.2 FINAL FIXED starting..."); a.run_polling(drop_pending_updates=True)
+    print("Bot V18.7 QUICK TP starting..."); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
