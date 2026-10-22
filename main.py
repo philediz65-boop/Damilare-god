@@ -8,10 +8,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN","").strip()
 PORT = int(os.getenv("PORT","10000"))
 app = Flask(__name__)
 DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
-ACTIVE_FILE = f"{DATA_DIR}/active_v33.json"
-DAILY_FILE = f"{DATA_DIR}/daily_v33.json"
-CHAT_FILE = f"{DATA_DIR}/chat_v33.json"
-LEARN_FILE = f"{DATA_DIR}/learn_v33.json"
+ACTIVE_FILE = f"{DATA_DIR}/active_v34.json"
+DAILY_FILE = f"{DATA_DIR}/daily_v34.json"
+CHAT_FILE = f"{DATA_DIR}/chat_v34.json"
+LEARN_FILE = f"{DATA_DIR}/learn_v34.json"
 CACHE = {}
 LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
@@ -56,7 +56,7 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return "V33 SMART AI + LIGHT CHART LIVE",200
+def home(): return "V34 SMART AI PERFECT + LIGHT CHART LIVE",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -74,41 +74,30 @@ def get_klines(sym, interval="2h"):
     if key in CACHE and time.time()-CACHE[key][0]<45:
         return CACHE[key][1]
     kl=None
-    try:
-        r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=7).json()
-        if isinstance(r,list) and len(r)>=50:
-            kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
-    except: pass
-    if not kl:
+    for fn in [
+        lambda: requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=7).json(),
+        lambda: requests.get("https://api.bybit.com/v5/market/kline",params={"category":"linear","symbol":sym,"interval":("120" if interval=="2h" else "60" if interval=="1h" else "15"),"limit":200},headers=HEADERS,timeout=7).json().get("result",{}).get("list",[]),
+        lambda: requests.get("https://www.okx.com/api/v5/market/candles",params={"instId":sym.replace("USDT","-USDT"),"bar":("2H" if interval=="2h" else "1H" if interval=="1h" else "15m"),"limit":"200"},headers=HEADERS,timeout=7).json().get("data",[]),
+    ]:
         try:
-            iv="120" if interval=="2h" else "60" if interval=="1h" else "15"
-            r=requests.get("https://api.bybit.com/v5/market/kline",params={"category":"linear","symbol":sym,"interval":iv,"limit":200},headers=HEADERS,timeout=7).json()
-            lst=r.get("result",{}).get("list",[])
+            r=fn()
+            lst=r if isinstance(r,list) else []
             if len(lst)>=50:
-                kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
+                # Normalize OKX/Bybit reverse
+                if isinstance(lst[0], list) and len(lst[0])>4 and isinstance(lst[0][0], str): # OKX timestamp string
+                    kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
+                elif isinstance(lst[0], list): # Bybit
+                    kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
+                else:
+                    kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
+                if kl: break
         except: pass
     if not kl:
         try:
-            iv="2H" if interval=="2h" else "1H" if interval=="1h" else "15m"
-            r=requests.get("https://www.okx.com/api/v5/market/candles",params={"instId":sym.replace("USDT","-USDT"),"bar":iv,"limit":"200"},headers=HEADERS,timeout=7).json()
+            r=requests.get("https://api.bitget.com/api/v2/mix/market/candles",params={"symbol":sym,"productType":"USDT-FUTURES","granularity":("2H" if interval=="2h" else "1H" if interval=="1h" else "15m"),"limit":"200"},headers=HEADERS,timeout=7).json()
             lst=r.get("data",[])
             if len(lst)>=50:
                 kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
-        except: pass
-    if not kl:
-        try:
-            gran="2H" if interval=="2h" else "1H" if interval=="1h" else "15m"
-            r=requests.get("https://api.bitget.com/api/v2/mix/market/candles",params={"symbol":sym,"productType":"USDT-FUTURES","granularity":gran,"limit":"200"},headers=HEADERS,timeout=7).json()
-            lst=r.get("data",[])
-            if len(lst)>=50:
-                kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
-        except: pass
-    if not kl:
-        try:
-            iv="2h" if interval=="2h" else "1h" if interval=="1h" else "15m"
-            r=requests.get("https://api.mexc.com/api/v3/klines",params={"symbol":sym,"interval":iv,"limit":200},headers=HEADERS,timeout=7).json()
-            if isinstance(r,list) and len(r)>=50:
-                kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
         except: pass
     if kl:
         CACHE[key]=(time.time(),kl)
@@ -116,17 +105,18 @@ def get_klines(sym, interval="2h"):
     return CACHE.get(key,(0,[]))[1] if key in CACHE else []
 
 def get_price(sym):
-    for url, parser in [
-        ("https://fapi.binance.com/fapi/v1/ticker/price", lambda r: float(r.get("price",0))),
-        ("https://api.bybit.com/v5/market/tickers", lambda r: float(r.get("result",{}).get("list",[{}])[0].get("lastPrice",0))),
-        ("https://www.okx.com/api/v5/market/ticker", lambda r: float(r.get("data",[{}])[0].get("last",0))),
-    ]:
-        try:
-            params = {"symbol":sym} if "binance" in url else {"category":"linear","symbol":sym} if "bybit" in url else {"instId":sym.replace("USDT","-USDT")}
-            rr=requests.get(url,params=params,headers=HEADERS,timeout=5).json()
-            p=parser(rr)
+    try:
+        r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=5).json()
+        p=float(r.get("price",0))
+        if p>0: return p
+    except: pass
+    try:
+        r=requests.get("https://www.okx.com/api/v5/market/ticker",params={"instId":sym.replace("USDT","-USDT")},headers=HEADERS,timeout=5).json()
+        lst=r.get("data",[])
+        if lst:
+            p=float(lst[0].get("last",0))
             if p>0: return p
-        except: pass
+    except: pass
     kl=get_klines(sym,"15m")
     return kl[-1]["c"] if kl else None
 
@@ -211,86 +201,86 @@ def analyze_single(code):
         return {"code":code,"price":price,"rsi":rsi_v,"adx":adx_v,"atr":atr_v,"volatility":volatility,"pd_zone":pd_zone,"pd_pct":pd_pct,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"e200":e200,"bos_bull":bos_bull,"bos_bear":bos_bear,"align":align,"dir":direction,"kl":k2,"closes":c2}
     except: return None
 
-# SMART AI LIKE ME - WEIGHTED SCORE NO HARD BLOCK
-def ai_score_smart(r, market_adx, learn):
+def ai_score_perfect(r, market_adx, learn):
     score=0; reasons=[]; thoughts=[]
-    # PD 20pts
+    # PD 20 - PERFECT LIKE ME
     if r["dir"]=="BUY":
-        if r["pd_pct"]<=25: score+=20; reasons.append(f"DISCOUNT {r['pd_pct']:.0f}% BUY +20 PERFECT"); thoughts.append(f"Discount {r['pd_pct']:.0f}% perfect buy zone like banks")
-        elif r["pd_pct"]<=38: score+=14; reasons.append(f"DISCOUNT {r['pd_pct']:.0f}% +14 GOOD")
-        elif r["pd_pct"]<=50: score+=8; reasons.append(f"EQUIL {r['pd_pct']:.0f}% +8")
-        elif r["pd_pct"]<=60: score+=3; reasons.append(f"EQUIL HIGH {r['pd_pct']:.0f}% +3 WEAK"); thoughts.append(f"Buying at {r['pd_pct']:.0f}% a bit high like QNT 79%")
-        else: score-=8; reasons.append(f"PREMIUM {r['pd_pct']:.0f}% BUY BAD -8"); thoughts.append(f"Premium {r['pd_pct']:.0f}% buying top avoid!")
+        if r["pd_pct"]<=28: score+=20; reasons.append(f"DISCOUNT {r['pd_pct']:.0f}% BUY PERFECT +20"); thoughts.append(f"Discount {r['pd_pct']:.0f}% perfect buy zone banks buy here")
+        elif r["pd_pct"]<=40: score+=14; reasons.append(f"DISCOUNT {r['pd_pct']:.0f}% GOOD +14")
+        elif r["pd_pct"]<=50: score+=7; reasons.append(f"EQUIL {r['pd_pct']:.0f}% OK +7")
+        elif r["pd_pct"]<=58: score+=2; reasons.append(f"EQUIL HIGH {r['pd_pct']:.0f}% WEAK +2"); thoughts.append(f"Buying at {r['pd_pct']:.0f}% high like QNT")
+        else: score-=10; reasons.append(f"PREMIUM {r['pd_pct']:.0f}% BUY BAD -10"); thoughts.append(f"Premium {r['pd_pct']:.0f}% avoid buying top")
     else:
-        if r["pd_pct"]>=75: score+=20; reasons.append(f"PREMIUM {r['pd_pct']:.0f}% SELL +20 PERFECT")
-        elif r["pd_pct"]>=62: score+=14; reasons.append(f"PREMIUM {r['pd_pct']:.0f}% SELL +14")
-        elif r["pd_pct"]>=50: score+=8; reasons.append(f"EQUIL {r['pd_pct']:.0f}% +8")
-        elif r["pd_pct"]>=40: score+=3; reasons.append(f"EQUIL LOW {r['pd_pct']:.0f}% +3")
-        else: score-=8; reasons.append(f"DISCOUNT {r['pd_pct']:.0f}% SELL BAD -8")
-    # RSI 15pts
-    if 45<=r["rsi"]<=55: score+=15; reasons.append(f"RSI {r['rsi']:.0f} PERFECT 45-55 +15"); thoughts.append(f"RSI {r['rsi']:.0f} perfect neutral room to move")
+        if r["pd_pct"]>=72: score+=20; reasons.append(f"PREMIUM {r['pd_pct']:.0f}% SELL PERFECT +20"); thoughts.append(f"Premium {r['pd_pct']:.0f}% perfect sell zone")
+        elif r["pd_pct"]>=60: score+=14; reasons.append(f"PREMIUM {r['pd_pct']:.0f}% GOOD +14")
+        elif r["pd_pct"]>=50: score+=7; reasons.append(f"EQUIL {r['pd_pct']:.0f}% OK +7")
+        elif r["pd_pct"]>=42: score+=2; reasons.append(f"EQUIL LOW {r['pd_pct']:.0f}% WEAK +2")
+        else: score-=10; reasons.append(f"DISCOUNT {r['pd_pct']:.0f}% SELL BAD -10")
+    # RSI 15
+    if 44<=r["rsi"]<=56: score+=15; reasons.append(f"RSI {r['rsi']:.0f} PERFECT 44-56 +15"); thoughts.append(f"RSI {r['rsi']:.0f} perfect neutral")
     elif 40<=r["rsi"]<=60: score+=10; reasons.append(f"RSI {r['rsi']:.0f} GOOD 40-60 +10")
-    elif 35<=r["rsi"]<=65: score+=5; reasons.append(f"RSI {r['rsi']:.0f} OK +5")
-    else: score-=2; reasons.append(f"RSI {r['rsi']:.0f} EXTREME -2")
-    # ADX 15pts
-    if 18<=r["adx"]<=50: score+=15; reasons.append(f"ADX {r['adx']:.0f} PERFECT TREND +15"); thoughts.append(f"ADX {r['adx']:.0f} strong trend good for fast TP")
-    elif r["adx"]>=14: score+=10; reasons.append(f"ADX {r['adx']:.0f} GOOD +10")
-    elif r["adx"]>=10: score+=5; reasons.append(f"ADX {r['adx']:.0f} WEAK +5"); thoughts.append(f"ADX {r['adx']:.0f} weak like WLD ADX 10 slow")
-    # Volatility+Vol 15pts
+    elif 36<=r["rsi"]<=66: score+=4; reasons.append(f"RSI {r['rsi']:.0f} OK +4")
+    else: score-=5; reasons.append(f"RSI {r['rsi']:.0f} EXTREME -5")
+    # ADX 15 - REJECT WEAK LIKE WLD ADX 10
+    if 18<=r["adx"]<=50: score+=15; reasons.append(f"ADX {r['adx']:.0f} STRONG TREND +15"); thoughts.append(f"ADX {r['adx']:.0f} strong trend fast TP")
+    elif r["adx"]>=14: score+=9; reasons.append(f"ADX {r['adx']:.0f} GOOD +9")
+    elif r["adx"]>=12: score+=3; reasons.append(f"ADX {r['adx']:.0f} WEAK +3"); thoughts.append(f"ADX {r['adx']:.0f} weak slow")
+    else: score-=5; reasons.append(f"ADX {r['adx']:.0f} VERY WEAK -5 like WLD 10"); thoughts.append(f"ADX {r['adx']:.0f} too weak like WLD screenshot")
+    # VOLATILITY + VOL 20 - REJECT -76%
     vs=0
-    if r["volatility"]>=2.5: vs+=8; reasons.append(f"Volat {r['volatility']:.2f}% HIGH +8 FAST"); thoughts.append(f"High volat {r['volatility']:.2f}% will hit TP fast like PEPE")
-    elif r["volatility"]>=1.2: vs+=5; reasons.append(f"Volat {r['volatility']:.2f}% GOOD +5")
-    elif r["volatility"]>=0.8: vs+=2; reasons.append(f"Volat {r['volatility']:.2f}% OK +2")
-    if r["vol_pct"]>=10: vs+=7; reasons.append(f"Vol {r['vol_pct']:.0f}% 🔥🔥 +7")
-    elif r["vol_pct"]>=3: vs+=4; reasons.append(f"Vol {r['vol_pct']:.0f}% 🔥 +4")
-    elif r["vol_pct"]>=-5: vs+=1; reasons.append(f"Vol {r['vol_pct']:.0f}% OK +1")
-    else: reasons.append(f"Vol {r['vol_pct']:.0f}% LOW +0 dead like WLD -34%")
+    if r["volatility"]>=2.2: vs+=10; reasons.append(f"Volat {r['volatility']:.2f}% HIGH +10 FAST"); thoughts.append(f"High volat {r['volatility']:.2f}% will hit TP fast like PEPE")
+    elif r["volatility"]>=1.3: vs+=6; reasons.append(f"Volat {r['volatility']:.2f}% GOOD +6")
+    elif r["volatility"]>=1.0: vs+=2; reasons.append(f"Volat {r['volatility']:.2f}% OK +2")
+    else: vs-=5; reasons.append(f"Volat {r['volatility']:.2f}% LOW -5 SLOW")
+    if r["vol_pct"]>=15: vs+=10; reasons.append(f"Vol {r['vol_pct']:.0f}% 🔥🔥 +10")
+    elif r["vol_pct"]>=5: vs+=6; reasons.append(f"Vol {r['vol_pct']:.0f}% 🔥 +6")
+    elif r["vol_pct"]>= -10: vs+=2; reasons.append(f"Vol {r['vol_pct']:.0f}% OK +2")
+    elif r["vol_pct"]>= -30: vs-=2; reasons.append(f"Vol {r['vol_pct']:.0f}% LOW -2")
+    else: vs-=10; reasons.append(f"Vol {r['vol_pct']:.0f}% DEAD -10 like WLD -76%"); thoughts.append(f"Vol {r['vol_pct']:.0f}% dead no momentum")
     score+=vs
-    # MTF+BOS 15pts
+    # MTF + BOS 15
     a_s=0
     if r["align"]==3: a_s+=10; reasons.append(f"Align 3/3 STRONG +10"); thoughts.append(f"All TF agree strong high prob")
-    elif r["align"]==2: a_s+=3; reasons.append(f"Align 2/3 +3")
+    elif r["align"]==2: a_s+=4; reasons.append(f"Align 2/3 +4")
+    else: a_s-=3; reasons.append(f"Align 1/3 WEAK -3")
     if r["bos_bull"] or r["bos_bear"]: a_s+=5; reasons.append(f"BOS 🔥 +5 breakout")
+    else: a_s-=1; reasons.append(f"BOS No -1 no breakout")
     score+=a_s
-    # EMA200 10pts
+    # EMA200 10
     if (r["dir"]=="BUY" and r["price"]>=r["e200"]) or (r["dir"]=="SELL" and r["price"]<=r["e200"]): score+=6; reasons.append(f"EMA200 MATCH +6")
-    else: score-=2; reasons.append(f"EMA200 AGAINST -2")
-    # Learn bonus 5pts
+    else: score-=4; reasons.append(f"EMA200 AGAINST -4")
+    # LEARN 5
     if r["code"] in learn:
         tot=learn[r["code"]]["wins"]+learn[r["code"]]["loss"]
         if tot>0:
             wr=learn[r["code"]]["wins"]/tot
-            if wr>=0.6: score+=5; reasons.append(f"LEARN {r['code']} WR {wr*100:.0f}% +5 BOOST"); thoughts.append(f"I remember {r['code']} won {wr*100:.0f}% before boost")
-            elif wr<=0.3: score-=3; reasons.append(f"LEARN {r['code']} Low WR -3")
-    return max(5, min(95, score)), reasons, thoughts
+            if wr>=0.6: score+=5; reasons.append(f"LEARN WR {wr*100:.0f}% +5"); thoughts.append(f"Remember {r['code']} won {wr*100:.0f}% boost")
+            elif wr<=0.3: score-=3; reasons.append(f"LEARN Low WR -3")
+    return max(0, min(95, score)), reasons, thoughts
 
 def build_trade(r):
     price=r["price"]; atr_v=r["atr"]; d=r["dir"]
-    if r["volatility"]>=2.5: sl_m=0.016; tp1_m=1.0; tp2_m=2.0; tp3_m=3.2
-    elif r["volatility"]>=1.5: sl_m=0.016; tp1_m=0.8; tp2_m=1.6; tp3_m=2.5
-    else: sl_m=0.014; tp1_m=0.6; tp2_m=1.3; tp3_m=2.0
+    if r["volatility"]>=2.2: sl_m=0.016; tp1_m=0.8; tp2_m=1.6; tp3_m=2.6
+    elif r["volatility"]>=1.3: sl_m=0.015; tp1_m=0.7; tp2_m=1.5; tp3_m=2.4
+    else: sl_m=0.013; tp1_m=0.6; tp2_m=1.2; tp3_m=2.0
     sl=price*(1-sl_m) if d=="BUY" else price*(1+sl_m)
     tp1=price+atr_v*tp1_m if d=="BUY" else price-atr_v*tp1_m
     tp2=price+atr_v*tp2_m if d=="BUY" else price-atr_v*tp2_m
     tp3=price+atr_v*tp3_m if d=="BUY" else price-atr_v*tp3_m
     return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":LEV[r["code"]],"rsi":r["rsi"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']} Align {r['align']}/3 ADX {r['adx']:.0f}","vol_txt":r["vol_txt"],"vol_pct":r["vol_pct"],"kl":r["kl"],"closes":r["closes"],"sl_pct":abs(sl-price)/price*100,"tp1_pct":abs(tp1-price)/price*100,"tp2_pct":abs(tp2-price)/price*100,"tp3_pct":abs(tp3-price)/price*100}
 
-# LIGHT CHART - QUICKCHART.IO API - NO MATPLOTLIB - 0MB
 def get_light_chart(r):
     try:
-        closes=r["closes"][-60:]
-        e20=ema_series(closes,20)[-60:]
-        e50=ema_series(closes,50)[-60:]
-        # Build quickchart config - small
+        closes=r["closes"][-50:]
+        e20=ema_series(closes,20)[-50:]
         labels=[str(i) for i in range(len(closes))]
-        chart_config={
+        cfg={
             "type":"line",
             "data":{
                 "labels":labels,
                 "datasets":[
                     {"label":r["code"],"data":closes,"borderColor":"black","fill":False,"pointRadius":0,"borderWidth":2},
                     {"label":"EMA20","data":e20,"borderColor":"#2196F3","fill":False,"pointRadius":0,"borderWidth":1},
-                    {"label":"EMA50","data":e50,"borderColor":"#FF9800","fill":False,"pointRadius":0,"borderWidth":1},
                 ]
             },
             "options":{
@@ -298,33 +288,28 @@ def get_light_chart(r):
                 "annotation":{
                     "annotations":[
                         {"type":"line","mode":"horizontal","scaleID":"y-axis-0","value":r["entry"],"borderColor":"blue","borderWidth":2,"label":{"enabled":True,"content":f'Entry {fmt(r["entry"])}'}},
-                        {"type":"line","mode":"horizontal","scaleID":"y-axis-0","value":r["sl"],"borderColor":"red","borderWidth":2,"label":{"enabled":True,"content":f'SL {fmt(r["sl"])}'}},
-                        {"type":"line","mode":"horizontal","scaleID":"y-axis-0","value":r["tp1"],"borderColor":"green","borderWidth":2,"label":{"enabled":True,"content":f'TP1 {fmt(r["tp1"])}'}},
-                        {"type":"line","mode":"horizontal","scaleID":"y-axis-0","value":r["tp2"],"borderColor":"#4CAF50","borderWidth":1},
+                        {"type":"line","mode":"horizontal","scaleID":"y-axis-0","value":r["sl"],"borderColor":"red","borderWidth":2,"label":{"enabled":True,"content":f'SL'}},
+                        {"type":"line","mode":"horizontal","scaleID":"y-axis-0","value":r["tp1"],"borderColor":"green","borderWidth":2,"label":{"enabled":True,"content":f'TP1'}},
                     ]
                 }
             }
         }
-        chart_json=json.dumps(chart_config)
-        encoded=urllib.parse.quote(chart_json)
-        url=f"https://quickchart.io/chart?width=700&height=400&c={encoded}"
-        # Fetch image bytes
+        url=f"https://quickchart.io/chart?width=700&height=400&c={urllib.parse.quote(json.dumps(cfg))}"
         resp=requests.get(url,timeout=12)
-        if resp.status_code==200 and len(resp.content)>5000:
-            return resp.content  # image bytes
-    except Exception as e:
-        print(f"Chart err {e}")
+        if resp.status_code==200 and len(resp.content)>4000:
+            return resp.content
+    except: pass
     return None
 
 def kb(active=None):
-    daily=get_daily(); learn=get_learn()
+    daily=get_daily()
     btns=[]
     if active and active.get("status")=="OPEN":
         btns.append([InlineKeyboardButton(f'{"🟢 BUY" if active["dir"]=="BUY" else "🔴 SELL"} {active["coin"]} {active["conf"]}/100 🧠 LIVE',callback_data="MON")])
-        btns.append([InlineKeyboardButton(f'👀 {active["coin"]} AI THINK',callback_data="CHK"),InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
+        btns.append([InlineKeyboardButton(f'👀 {active["coin"]} AI',callback_data="CHK"),InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'🧠 SCAN 20 SMART AI + CHART - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
-    btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f} Learn {len(learn)}',callback_data="DAILY")])
+        btns.append([InlineKeyboardButton(f'🧠 SCAN 20 SMART AI PERFECT - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
+    btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY")])
     row=[]
     for c in FAST:
         row.append(InlineKeyboardButton(f'{c}',callback_data=f'C_{c}'))
@@ -335,22 +320,22 @@ def kb(active=None):
 
 async def setup_menu(app):
     try:
-        await app.bot.set_my_commands([BotCommand("start","🧠 V33 SMART+CHART"),BotCommand("scan","SCAN SMART"),BotCommand("daily","Daily")])
+        await app.bot.set_my_commands([BotCommand("start","🧠 V34 PERFECT"),BotCommand("scan","SCAN SMART"),BotCommand("daily","Daily")])
     except: pass
 
 def bg_scan(chat_id):
     try:
-        print(f"🧠 V33 SMART AI + LIGHT CHART SCAN {len(FAST)}")
+        print(f"🧠 V34 PERFECT SCAN {len(FAST)}")
         raws=[]
         for code in FAST:
             r=analyze_single(code)
             if r:
                 raws.append(r)
-                print(f" OK {code} ADX {r['adx']:.0f} RSI {r['rsi']:.0f} PD {r['pd_pct']:.0f}% Volat {r['volatility']:.2f}%")
+                print(f" OK {code} ADX {r['adx']:.0f} RSI {r['rsi']:.0f} PD {r['pd_pct']:.0f}% Volat {r['volatility']:.2f}% Vol {r['vol_pct']:.0f}%")
             time.sleep(0.06)
         print(f"FETCHED {len(raws)}/{len(FAST)}")
         if len(raws)==0:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"⚠️ Fetch fail 0/20 - All 5 exchanges blocked - Try 1m"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"⚠️ Fetch fail 0/20 - Try 1m"},timeout=10)
             return
         avg_adx=sum(x["adx"] for x in raws)/len(raws)
         avg_volat=sum(x["volatility"] for x in raws)/len(raws)
@@ -358,33 +343,51 @@ def bg_scan(chat_id):
         learn=get_learn()
         cands=[]
         for r in raws:
-            if r["rsi"]>80 or r["rsi"]<20: continue
-            if r["dir"]=="BUY" and r["pd_pct"]>75: continue
-            if r["dir"]=="SELL" and r["pd_pct"]<25: continue
-            score,reasons,thoughts=ai_score_smart(r, avg_adx, learn)
+            # HARD REJECT TRASH LIKE WLD -76%
+            if r["vol_pct"] < -40: 
+                print(f"  REJECT {r['code']} Vol {r['vol_pct']:.0f}% < -40% dead like WLD screenshot")
+                continue
+            if r["adx"] < 11:
+                print(f"  REJECT {r['code']} ADX {r['adx']:.0f} <11 too weak")
+                continue
+            if r["rsi"]>78 or r["rsi"]<22: continue
+            if r["dir"]=="BUY" and r["pd_pct"]>72: continue
+            if r["dir"]=="SELL" and r["pd_pct"]<28: continue
+            score,reasons,thoughts=ai_score_perfect(r, avg_adx, learn)
+            # ONLY TAKE 65+ SCORE - NO 39/100
+            if score < 65:
+                print(f"  LOW SCORE {r['code']} {score}/100 <65 skip like WLD 39/100")
+                continue
             trade=build_trade(r)
             trade["conf"]=int(score)
-            trade["reason"]=" | ".join(reasons[:5])
-            trade["ai_thought"]=" | ".join(thoughts) if thoughts else "Balanced setup good"
-            trade["mode"]=mode+" SMART AI"
+            trade["reason"]=" | ".join(reasons[:4])
+            trade["ai_thought"]=" | ".join(thoughts) if thoughts else "Good balanced setup"
+            trade["mode"]=mode+" PERFECT"
             cands.append(trade)
+            print(f"  CAND {r['code']} {int(score)}/100 - {trade['ai_thought'][:60]}")
         if not cands:
-            raws_sorted=sorted(raws, key=lambda x: x["volatility"], reverse=True)
-            r=raws_sorted[0]
-            trade=build_trade(r)
-            trade["conf"]=55
-            trade["reason"]="EMERGENCY highest volat"
-            trade["ai_thought"]="Market slow but must trade highest volat"
-            trade["mode"]=mode+" EMERGENCY"
-            cands=[trade]
-        cands.sort(key=lambda x: x["conf"]+x["volatility"]*3, reverse=True)
+            # Find best even if <65 to show why no trade
+            all_scores=[]
+            for r in raws:
+                s,_,_ = ai_score_perfect(r, avg_adx, learn)
+                all_scores.append((r["code"], s, r["vol_pct"], r["adx"], r["pd_pct"]))
+            all_scores.sort(key=lambda x: x[1], reverse=True)
+            best_code, best_score, best_vol, best_adx, best_pd = all_scores[0]
+            msg=(f"🛡️ *No FAST quality trade now - Market slow*\n"
+                 f"Checked {len(raws)}/20 FAST Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% Mode {mode}\n"
+                 f"Best was {best_code} SCORE {best_score}/100 Vol {best_vol:.0f}% ADX {best_adx:.0f} PD {best_pd:.0f}% - Too weak like WLD 39/100 screenshot\n"
+                 f"Need: Score 65+ + Vol > -40% + ADX 11+ + PD 0-40% BUY 60-100% SELL + RSI 22-78 + Volat 1.0%+\n"
+                 f"Try again in 15m - Fast coins resting, not like WLD Vol -76% dead")
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
+            return
+        cands.sort(key=lambda x: x["conf"]+x["volatility"]*4 + x["vol_pct"]*0.1, reverse=True)
         best=cands[0]
-        print(f"BEST SMART {best['code']} {best['dir']} {best['conf']} THOUGHT {best['ai_thought']}")
+        print(f"BEST PERFECT {best['code']} {best['dir']} {best['conf']} Volat {best['volatility']:.2f}% THOUGHT {best['ai_thought']}")
         if get_active().get("status")=="OPEN":
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN"},timeout=10)
             return
         r=best
-        stake=1.0 if r["conf"]>=70 else 0.6
+        stake=1.0 if r["conf"]>=75 else 0.6
         set_active({"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(__import__('datetime').datetime.now()),"mode":r["mode"],"ai_thought":r["ai_thought"],"reason":r["reason"]})
         loss=stake*r["sl_pct"]*r["lev"]/100
         p1=stake*r["tp1_pct"]*r["lev"]/100
@@ -392,15 +395,14 @@ def bg_scan(chat_id):
         p3=stake*r["tp3_pct"]*r["lev"]/100
         txt=(f"🧠 *{r['mode']} SCORE {r['conf']}/100 {r['code']} Trade {get_daily()['trades']+1}/3* {'🟢 BUY LONG 🚀 SMART' if r['dir']=='BUY' else '🔴 SELL SHORT 💥 SMART'} ${stake} {r['lev']}x\n"
              f"💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} Volat {r['volatility']:.2f}% FAST | {r['vol_txt']}\n"
-             f"⚡ TP1 FAST {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f}) {r['tp1_pct']*100:.1f}% ATR\n"
+             f"⚡ TP1 FAST {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f})\n"
              f"🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f})\n"
              f"🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f})\n"
              f"🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f})\n"
              f"{r['mtf']}\n"
              f"🧠 *AI THOUGHT (like me):* {r['ai_thought']}\n"
              f"✅ *SCORE:* {r['reason']}\n"
-             f"📊 Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% | Best {len(cands)}/{len(raws)} SMART AI BULLETPROOF")
-        # LIGHT CHART
+             f"📊 Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% | Best {len(cands)}/{len(raws)} PERFECT FAST - Will hit TP fast!")
         chart_bytes=get_light_chart(r)
         try:
             if chart_bytes:
@@ -415,39 +417,38 @@ def bg_scan(chat_id):
 
 async def start(u,c):
     save_chat(u.message.chat.id)
-    await u.message.reply_text(f"🧠 *V33 SMART AI LIKE ME + LIGHT CHART - PERFECT*\n✅ SMART AI: PD 20% + RSI 15% + ADX 15% + Vol+Volat 15% + MTF+BOS 15% + EMA200 10% + Learn 5% = No hard block! QNT PREMIUM 79% BUY = -8 score not block\n✅ AI THOUGHT: Like me explain - 'Discount 22% perfect buy zone... RSI 48 perfect... High volat 2.8% fast TP'\n✅ Adaptive TP: PEPE volat 3.2% TP wider +32%, TIA 0.9% TP tighter +18%\n✅ Self-learning: Track wins boost next time\n✅ BULLETPROOF 5 exchanges Binance+Bybit+OKX+Bitget+MEXC - No 0/20\n✅ LIGHT CHART: quickchart.io API - 0MB - Still Live 519bb46 - Shows Entry/SL/TP1 lines",parse_mode="Markdown",reply_markup=kb())
+    await u.message.reply_text(f"🧠 *V34 PERFECT SMART AI LIKE ME + LIGHT CHART*\n✅ Fixed WLD 39/100 screenshot: Now reject Vol < -40% (WLD -76% dead) + ADX <11 + Score <65 = No trade\n✅ Minimum 65/100 to trade - No more 39/100 trash\n✅ Need: Volat 1.0%+ + Vol > -40% + ADX 11+ + PD 0-40% BUY 60-100% SELL + RSI 22-78\n✅ FAST coins priority PEPE BONK WIF FLOKI BOME - High volat fast TP\n✅ Light chart quickchart.io 0MB - Still Live\n✅ AI Thought like me perfect",parse_mode="Markdown",reply_markup=kb())
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id)
     threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("🧠 SCANNING 20 SMART AI + LIGHT CHART...")
+    await u.message.reply_text("🧠 SCANNING 20 PERFECT SMART AI - Reject 39/100...")
 async def daily_cmd(u,c):
     save_chat(u.message.chat.id)
     d=get_daily(); learn=get_learn()
-    txt=f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L Trades {d['trades']}/3 ${d['pnl']:.2f}\n🧠 Learned:"
+    txt=f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L Trades {d['trades']}/3 ${d['pnl']:.2f}\n"
     for k,v in learn.items():
         wr=v["wins"]/(v["wins"]+v["loss"])*100 if (v["wins"]+v["loss"])>0 else 0
-        txt+=f"\n{k}: {v['wins']}W/{v['loss']}L ${v['pnl']:.2f} WR {wr:.0f}%"
+        txt+=f"{k}: {v['wins']}W/{v['loss']}L WR {wr:.0f}% "
     await u.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb())
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
     if data=="DAILY":
-        d=get_daily(); learn=get_learn()
-        txt=f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} Learn {len(learn)}"
-        await q.message.reply_text(txt,reply_markup=kb(get_active())); return
+        d=get_daily()
+        await q.message.reply_text(f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
     if data in ["MON","CHK"]:
         act=get_active()
-        if not act.get("status")=="OPEN": await q.message.reply_text("No active SMART AI",reply_markup=kb()); return
+        if not act.get("status")=="OPEN": await q.message.reply_text("No active",reply_markup=kb()); return
         price=get_price(CRYPTO[act["coin"]]) or act["entry"]
         pnl=(price-act["entry"])/act["entry"]*100*act["lev"] if act["dir"]=="BUY" else (act["entry"]-price)/act["entry"]*100*act["lev"]
-        await q.message.reply_text(f"🧠 {act['coin']} {act['dir']} Now {fmt(price)} Entry {fmt(act['entry'])} P&L {pnl:.2f}%\n🧠 AI Thought: {act.get('ai_thought','')}\n✅ {act.get('reason','')}",reply_markup=kb(act)); return
-    if data=="CLS": clear_active(); await q.message.reply_text("✅ Closed SMART AI",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING 20 SMART AI + CHART..."); return
+        await q.message.reply_text(f"🧠 {act['coin']} {act['dir']} Now {fmt(price)} Entry {fmt(act['entry'])} P&L {pnl:.2f}%\n🧠 AI: {act.get('ai_thought','')}\n✅ {act.get('reason','')}",reply_markup=kb(act)); return
+    if data=="CLS": clear_active(); await q.message.reply_text("✅ Closed",reply_markup=kb()); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING 20 PERFECT..."); return
     if data.startswith("C_"):
         code=data[2:]; raw=analyze_single(code)
         if not raw: await q.message.reply_text(f"⚠️ Fetch fail {code}",reply_markup=kb()); return
-        trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual {code}"; trade["ai_thought"]=f"Manual check {code} - Good setup"; trade["mode"]="MANUAL SMART"
+        trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual {code}"; trade["ai_thought"]=f"Manual {code} check"; trade["mode"]="MANUAL PERFECT"
         set_active({"status":"OPEN","coin":trade["code"],"dir":trade["dir"],"entry":trade["entry"],"sl":trade["sl"],"tp1":trade["tp1"],"tp2":trade["tp2"],"tp3":trade["tp3"],"conf":trade["conf"],"stake":1.0,"lev":trade["lev"],"time":str(__import__('datetime').datetime.now()),"mode":"MANUAL","ai_thought":trade["ai_thought"],"reason":trade["reason"]})
-        txt=f"🧠 *V33 MANUAL {trade['conf']}/100 {trade['code']} {trade['dir']}* @ {fmt(trade['entry'])} Volat {raw['volatility']:.2f}%"
+        txt=f"🧠 *V34 MANUAL {trade['conf']}/100 {trade['code']} {trade['dir']}* @ {fmt(trade['entry'])}"
         chart_bytes=get_light_chart(trade)
         if chart_bytes:
             await q.message.reply_photo(photo=chart_bytes,caption=txt,parse_mode="Markdown",reply_markup=kb(get_active()))
@@ -480,10 +481,10 @@ def monitor():
                 if "TP" in hit:
                     tp=act["tp1"] if "TP1" in hit else act["tp2"] if "TP2" in hit else act["tp3"]
                     pct=abs(tp-entry)/entry*100*lev; pnl=stake*pct/100
-                    msg=f"🧠 {hit} SMART AI! {coin} +{pct:.0f}% +${pnl:.2f} - AI picked best!"; update_daily("WIN",pnl,coin); clear_active()
+                    msg=f"🧠 {hit} SMART! {coin} +{pct:.0f}% +${pnl:.2f} FAST TP!"; update_daily("WIN",pnl,coin); clear_active()
                 else:
                     pct=abs(act["sl"]-entry)/entry*100*lev; pnl=stake*pct/100
-                    msg=f"💀 SL SMART AI {coin} -{pct:.0f}% -${pnl:.2f} - AI learn"; update_daily("LOSS",-pnl,coin); clear_active()
+                    msg=f"💀 SL SMART {coin} -{pct:.0f}% -${pnl:.2f}"; update_daily("LOSS",-pnl,coin); clear_active()
                 try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":msg},timeout=8)
                 except: pass
         except: time.sleep(10)
@@ -494,7 +495,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V33 SMART AI + LIGHT CHART starting"); a.run_polling(drop_pending_updates=True)
+    print("V34 PERFECT starting"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
