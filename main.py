@@ -10,18 +10,16 @@ BOT_TOKEN = os.getenv("BOT_TOKEN","").strip()
 PORT = int(os.getenv("PORT","10000"))
 app = Flask(__name__)
 DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
-ACTIVE_FILE = f"{DATA_DIR}/active_v27.json"
-DAILY_FILE = f"{DATA_DIR}/daily_v27.json"
-CHAT_FILE = f"{DATA_DIR}/chat_v27.json"
+ACTIVE_FILE = f"{DATA_DIR}/active_v28.json"
+DAILY_FILE = f"{DATA_DIR}/daily_v28.json"
+CHAT_FILE = f"{DATA_DIR}/chat_v28.json"
 CACHE = {}; LOCK = threading.Lock(); HEADERS = {"User-Agent":"Mozilla/5.0"}
-STAKE_NORM = 1.0; STAKE_LOW = 0.5; LEV_NORM = 15; LEV_MEME = 10
-MEME = {"WIF","PEPE","BONK","FLOKI","BOME","SHIB","NOT","FARTCOIN","ZEREBRO","TRUMP","WLD","HYPE"}
+STAKE_NORM = 1.0; STAKE_LOW = 0.6; LEV_NORM = 15; LEV_MEME = 10
+MEME = {"WIF","PEPE","BONK","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE"}
 def get_lev(c): return LEV_MEME if c in MEME else LEV_NORM
-
-# FAST 20 ONLY - NO SLOW BTC ETH
 CRYPTO = {"PEPE":"PEPEUSDT","BONK":"BONKUSDT","WIF":"WIFUSDT","FLOKI":"FLOKIUSDT","BOME":"BOMEUSDT","SHIB":"SHIBUSDT","DOGE":"DOGEUSDT","TRUMP":"TRUMPUSDT","FARTCOIN":"FARTCOINUSDT","ZEREBRO":"ZEREBROUSDT","WLD":"WLDUSDT","HYPE":"HYPEUSDT","SUI":"SUIUSDT","SOL":"SOLUSDT","AVAX":"AVAXUSDT","TAO":"TAOUSDT","ARB":"ARBUSDT","OP":"OPUSDT","ENA":"ENAUSDT","TIA":"TIAUSDT"}
 FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA"]
-print(f"💀 V27 FAST 20 {DATA_DIR} - TP FAST")
+print(f"💀 V28 FAST 20 GUARANTEED {DATA_DIR}")
 
 def load_json(p,d):
     try:
@@ -50,7 +48,7 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return "V27 FAST 20 TP FAST",200
+def home(): return "V28 FAST 20 GUARANTEED",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -80,25 +78,12 @@ def get_klines(sym, interval="2h"):
             kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
             CACHE[key]=(time.time(),kl); return kl
     except: pass
-    try:
-        iv="2H" if interval=="2h" else "1H" if interval=="1h" else "15m"
-        r=requests.get("https://www.okx.com/api/v5/market/candles",params={"instId":sym.replace("USDT","-USDT"),"bar":iv,"limit":"200"},headers=HEADERS,timeout=5).json()
-        lst=r.get("data",[])
-        if len(lst)>=50:
-            kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
-            CACHE[key]=(time.time(),kl); return kl
-    except: pass
     return CACHE.get(key,(0,[]))[1] if key in CACHE else []
 
 def get_price(sym):
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=4).json()
         p=float(r.get("price",0))
-        if p>0: return p
-    except: pass
-    try:
-        r=requests.get("https://api.bybit.com/v5/market/tickers",params={"category":"linear","symbol":sym},headers=HEADERS,timeout=4).json()
-        p=float(r.get("result",{}).get("list",[{}])[0].get("lastPrice",0))
         if p>0: return p
     except: pass
     kl=get_klines(sym,"15m")
@@ -164,13 +149,7 @@ def trend(closes):
 def vol_calc(kl):
     if len(kl)<20: return 0,"Vol N/A"
     vols=[k["v"] for k in kl[-20:]]; avg=sum(vols[:-1])/len(vols[:-1]); pct=(vols[-1]-avg)/avg*100 if avg else 0
-    return pct,f"📊 Vol {pct:.0f}% {'🔥🔥' if pct>15 else '🔥' if pct>8 else ''}"
-def candle_calc(kl):
-    if len(kl)<3: return "NONE"
-    c2,c3=kl[-2],kl[-1]
-    if c2["c"]>c2["o"] and c3["c"]<c3["o"] and c3["o"]>=c2["c"]: return "🐻 BEARISH ENGULFING SELL"
-    if c2["c"]<c2["o"] and c3["c"]>c3["o"] and c3["o"]<=c2["c"]: return "🐂 BULLISH ENGULFING BUY"
-    return "NONE"
+    return pct,f"📊 Vol {pct:.0f}% {'🔥🔥' if pct>15 else '🔥' if pct>5 else ''}"
 def fvg_calc(kl):
     for i in range(len(kl)-10, len(kl)-1):
         a,b=kl[i-1],kl[i]
@@ -192,31 +171,28 @@ def analyze_single(code):
         if abs(price-c2[-1])/c2[-1]>0.06: price=c2[-1]
         rsi_v=rsi(c2); atr_v=atr(k2); adx_v=adx_calc(k2)
         macd=macd_calc(c2); pd_zone,pd_pct=pd_calc(k2)
-        cand=candle_calc(k2); ob=ob_calc(k2); fvg=fvg_calc(k2)
+        fvg=fvg_calc(k2); ob=ob_calc(k2)
         c15=[k["c"] for k in k15] if k15 else c2
         c1=[k["c"] for k in k1] if k1 else c2
         s15,t15=trend(c15); s1,t1=trend(c1); s2,t2=trend(c2)
         vol_pct,vol_txt=vol_calc(k2)
         e200=ema(c2,200)
-        prev_high=k2[-2]["h"]; prev_low=k2[-2]["l"]; curr_high=k2[-1]["h"]; curr_low=k2[-1]["l"]; curr_close=k2[-1]["c"]
-        bos_bull = curr_high > prev_high or curr_close > prev_high
-        bos_bear = curr_low < prev_low or curr_close < prev_low
+        bos_bull = k2[-1]["h"] > k2[-2]["h"] or k2[-1]["c"] > k2[-2]["h"]
+        bos_bear = k2[-1]["l"] < k2[-2]["l"] or k2[-1]["c"] < k2[-2]["l"]
         align = 3 if (s15>0 and s1>0 and s2>0) or (s15<0 and s1<0 and s2<0) else 2 if (s1>0 and s2>0) or (s1<0 and s2<0) else 1
-        is_strong = ("UPTREND" in t15 and "UPTREND" in t1 and "UPTREND" in t2) or ("DOWNTREND" in t15 and "DOWNTREND" in t1 and "DOWNTREND" in t2)
+        is_strong = ("UPTREND" in t15 and "UPTREND" in t1) or ("DOWNTREND" in t15 and "DOWNTREND" in t1) or (align==3)
         direction="BUY" if s2>=0 else "SELL"
-        # FAST SCORE: volatility = atr/price
         volatility = atr_v/price*100 if price else 0
-        return {"code":code,"sym":sym,"price":price,"rsi":rsi_v,"adx":adx_v,"atr":atr_v,"volatility":volatility,"macd":macd,"pd_zone":pd_zone,"pd_pct":pd_pct,"candle":cand,"ob":ob,"fvg":fvg,"s15":s15,"s1":s1,"s2":s2,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"e200":e200,"bos_bull":bos_bull,"bos_bear":bos_bear,"align":align,"is_strong":is_strong,"dir":direction,"kl":k2}
+        return {"code":code,"sym":sym,"price":price,"rsi":rsi_v,"adx":adx_v,"atr":atr_v,"volatility":volatility,"macd":macd,"pd_zone":pd_zone,"pd_pct":pd_pct,"ob":ob,"fvg":fvg,"s15":s15,"s1":s1,"s2":s2,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"e200":e200,"bos_bull":bos_bull,"bos_bear":bos_bear,"align":align,"is_strong":is_strong,"dir":direction,"kl":k2}
     except: return None
 
 def build_trade(r):
     price=r["price"]; atr_v=r["atr"]; direction=r["dir"]
-    # FAST TP - TIGHTER FOR QUICK HIT
-    sl=price*0.984 if direction=="BUY" else price*1.016  # 1.6% SL tighter for fast coins
-    tp1=price+atr_v*0.8 if direction=="BUY" else price-atr_v*0.8  # FAST TP1 0.8x ATR
-    tp2=price+atr_v*1.6 if direction=="BUY" else price-atr_v*1.6  # TP2 1.6x
-    tp3=price+atr_v*2.5 if direction=="BUY" else price-atr_v*2.5  # TP3 2.5x runner
-    return {"code":r["code"],"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":get_lev(r["code"]),"rsi":r["rsi"],"adx":r["adx"],"atr":atr_v,"volatility":r["volatility"],"macd":r["macd"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"candle":r["candle"],"ob":r["ob"],"fvg":r["fvg"],"mtf":f"⏱️ 15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']} [Align {r['align']}/3 {'STRONG' if r['is_strong'] else 'WEAK'}] ADX {r['adx']:.0f} | MACD {r['macd']} | EMA200 {fmt(r['e200'])}","vol_txt":r["vol_txt"],"vol_pct":r["vol_pct"],"smc":f"🕯️ {r['candle']} | {r['macd']} | {r['ob']['type']} | {r['fvg']['type'] if r['fvg'] else 'FVG None'} | {r['pd_zone']} {r['pd_pct']:.0f}% | BOS {'🔥' if r['bos_bull'] or r['bos_bear'] else 'No'} | Volatility {r['volatility']:.2f}%","liq":f"🐋 Liq UP {fmt(max(k['h'] for k in r['kl'][-20:])*1.02)} | DOWN {fmt(min(k['l'] for k in r['kl'][-20:])*0.98)}","kl":r["kl"],"e200":r["e200"],"align":r["align"],"is_strong":r["is_strong"],"bos_bull":r["bos_bull"],"bos_bear":r["bos_bear"],"sl_pct":abs(sl-price)/price*100,"tp1_pct":abs(tp1-price)/price*100,"tp2_pct":abs(tp2-price)/price*100,"tp3_pct":abs(tp3-price)/price*100}
+    sl=price*0.984 if direction=="BUY" else price*1.016
+    tp1=price+atr_v*0.8 if direction=="BUY" else price-atr_v*0.8
+    tp2=price+atr_v*1.6 if direction=="BUY" else price-atr_v*1.6
+    tp3=price+atr_v*2.5 if direction=="BUY" else price-atr_v*2.5
+    return {"code":r["code"],"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":get_lev(r["code"]),"rsi":r["rsi"],"adx":r["adx"],"atr":atr_v,"volatility":r["volatility"],"macd":r["macd"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"ob":r["ob"],"fvg":r["fvg"],"mtf":f"⏱️ 15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']} [Align {r['align']}/3 {'STRONG' if r['is_strong'] else 'WEAK'}] ADX {r['adx']:.0f} | {r['macd']}","vol_txt":r["vol_txt"],"vol_pct":r["vol_pct"],"smc":f"{r['macd']} | {r['ob']['type']} | {r['fvg']['type'] if r['fvg'] else 'FVG None'} | {r['pd_zone']} {r['pd_pct']:.0f}% | BOS {'🔥' if r['bos_bull'] or r['bos_bear'] else 'No'} | Volat {r['volatility']:.2f}%","kl":r["kl"],"e200":r["e200"],"align":r["align"],"is_strong":r["is_strong"],"bos_bull":r["bos_bull"],"bos_bear":r["bos_bear"],"sl_pct":abs(sl-price)/price*100,"tp1_pct":abs(tp1-price)/price*100,"tp2_pct":abs(tp2-price)/price*100,"tp3_pct":abs(tp3-price)/price*100}
 
 def chart(r):
     try:
@@ -239,7 +215,7 @@ def kb(active=None):
         btns.append([InlineKeyboardButton(f'{"🟢 BUY" if active["dir"]=="BUY" else "🔴 SELL"} {active["coin"]} {active["conf"]}/100 LIVE FAST',callback_data="MON")])
         btns.append([InlineKeyboardButton(f'👀 {active["coin"]}',callback_data="CHK"),InlineKeyboardButton(f'❌ Close {active["coin"]}',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'⚡ SCAN 20 FAST - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
+        btns.append([InlineKeyboardButton(f'⚡ SCAN 20 FAST GUARANTEED - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
     btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY")])
     row=[]
     for c in FAST:
@@ -250,97 +226,77 @@ def kb(active=None):
 
 async def setup_menu(app):
     try:
-        await app.bot.set_my_commands([BotCommand("start","⚡ V27 FAST 20"),BotCommand("scan","🔍 SCAN FAST"),BotCommand("daily","📊 Daily")])
+        await app.bot.set_my_commands([BotCommand("start","⚡ V28 FAST"),BotCommand("scan","🔍 SCAN FAST"),BotCommand("daily","📊 Daily")])
     except: pass
 
 def bg_scan(chat_id):
     try:
-        print(f"⚡ V27 FAST 20 SCAN {len(FAST)}")
+        print(f"⚡ V28 FAST 20 GUARANTEED SCAN {len(FAST)}")
         raws=[]
         for code in FAST:
             r=analyze_single(code)
-            if r: raws.append(r); print(f"  RAW {code} ADX {r['adx']:.0f} RSI {r['rsi']:.0f} PD {r['pd_pct']:.0f}% Vol {r['vol_pct']:.0f}% Volatility {r['volatility']:.2f}% BOS {r['bos_bull'] or r['bos_bear']} Align {r['align']}")
+            if r: raws.append(r); print(f"  RAW {code} ADX {r['adx']:.0f} RSI {r['rsi']:.0f} PD {r['pd_pct']:.0f}% Vol {r['vol_pct']:.0f}% Volat {r['volatility']:.2f}% BOS {r['bos_bull'] or r['bos_bear']} Align {r['align']}")
             time.sleep(0.05)
         if not raws:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"⚠️ Fetch fail 0/20 fast"},timeout=10); return
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"⚠️ Fetch fail 0/20"},timeout=10); return
         avg_adx=sum(x["adx"] for x in raws)/len(raws)
         avg_volat=sum(x["volatility"] for x in raws)/len(raws)
         mode="TREND" if avg_adx>=18 else "NORMAL" if avg_adx>=14 else "CHOPPY"
-        print(f"MODE {mode} avgADX {avg_adx:.1f} avgVolat {avg_volat:.2f}% FAST 20")
+        print(f"MODE {mode} avgADX {avg_adx:.1f} avgVolat {avg_volat:.2f}%")
 
-        def is_fast_perfect(r):
-            # FAST PERFECT - Must be volatile + perfect entry
-            if r["volatility"] < 1.2:  # At least 1.2% ATR = volatile
-                print(f"  BLOCK {r['code']} Volatility {r['volatility']:.2f}% <1.2% too slow")
-                return False
-            if r["dir"]=="BUY" and r["pd_pct"]>42: return False
-            if r["dir"]=="SELL" and r["pd_pct"]<58: return False
-            if not (40 <= r["rsi"] <= 60): return False
-            if r["adx"] < 14: return False
-            if r["vol_pct"] < 2: return False  # Need volume pumping
-            if not (r["bos_bull"] or r["bos_bear"]): return False
-            if r["align"] < 3: return False
-            if r["dir"]=="BUY" and "BEARISH" in r["macd"]: return False
-            if r["dir"]=="SELL" and "BULLISH" in r["macd"]: return False
-            if r["dir"]=="BUY" and r["price"] < r["e200"]*0.998: return False
-            if r["dir"]=="SELL" and r["price"] > r["e200"]*1.002: return False
-            return True
-
-        def is_fast_good(r):
-            if r["volatility"] < 0.9: return False
-            if r["dir"]=="BUY" and r["pd_pct"]>55: return False
-            if r["dir"]=="SELL" and r["pd_pct"]<45: return False
-            if not (38 <= r["rsi"] <= 65): return False
-            if r["adx"] < 12: return False
-            if r["vol_pct"] < -5: return False
-            if r["align"] < 2: return False
-            return True
-
-        tier1=[]; tier2=[]
+        tier1=[]; tier2=[]; tier3=[]
         for r in raws:
-            if is_fast_perfect(r):
-                trade=build_trade(r)
-                # Bonus for volatility - more volatile = higher score for fast TP
-                bonus = int(r["volatility"]*2 + r["vol_pct"]/5)
-                trade["conf"]=min(92, 78 + bonus)
-                trade["reason"]=f"FAST PERFECT Volat {r['volatility']:.2f}% HIGH + RSI {r['rsi']:.0f} + PD {r['pd_pct']:.0f}% + ADX {r['adx']:.0f} + Vol {r['vol_pct']:.0f}% 🔥 + BOS + Align 3/3 STRONG + MACD MATCH - WILL HIT TP FAST"
-                trade["mode"]=mode+" FAST PERFECT"
-                tier1.append(trade)
-                print(f"  >>> FAST PERFECT {r['code']} Volat {r['volatility']:.2f}%")
-            elif is_fast_good(r):
-                trade=build_trade(r)
-                trade["conf"]=68
-                trade["reason"]=f"FAST GOOD Volat {r['volatility']:.2f}% + RSI {r['rsi']:.0f} + PD {r['pd_pct']:.0f}%"
-                trade["mode"]=mode+" FAST GOOD"
-                tier2.append(trade)
+            # TIER 1 PERFECT
+            if r["volatility"]>=1.2 and ((r["dir"]=="BUY" and r["pd_pct"]<=42) or (r["dir"]=="SELL" and r["pd_pct"]>=58)) and 40<=r["rsi"]<=60 and r["adx"]>=14 and r["vol_pct"]>=2 and (r["bos_bull"] or r["bos_bear"]) and r["align"]==3 and ((r["dir"]=="BUY" and "BULLISH" in r["macd"]) or (r["dir"]=="SELL" and "BEARISH" in r["macd"])) and ((r["dir"]=="BUY" and r["price"]>=r["e200"]*0.998) or (r["dir"]=="SELL" and r["price"]<=r["e200"]*1.002)):
+                trade=build_trade(r); trade["conf"]=min(92, 80 + int(r["volatility"]*2 + r["vol_pct"]/10)); trade["reason"]=f"TIER1 PERFECT FAST Volat {r['volatility']:.2f}% PD {r['pd_pct']:.0f}% RSI {r['rsi']:.0f} ADX {r['adx']:.0f} Vol {r['vol_pct']:.0f}% BOS Align 3/3 STRONG MACD MATCH"; trade["mode"]=mode+" TIER1 FAST PERFECT"; tier1.append(trade)
+            # TIER 2 GOOD - RELAXED
+            elif r["volatility"]>=0.9 and ((r["dir"]=="BUY" and r["pd_pct"]<=52) or (r["dir"]=="SELL" and r["pd_pct"]>=48)) and 38<=r["rsi"]<=65 and r["adx"]>=12 and r["vol_pct"]>=-8 and r["align"]>=2 and ((r["dir"]=="BUY" and r["price"]>=r["e200"]*0.995) or (r["dir"]=="SELL" and r["price"]<=r["e200"]*1.005)):
+                if (r["dir"]=="BUY" and "BEARISH" in r["macd"]) or (r["dir"]=="SELL" and "BULLISH" in r["macd"]): 
+                    pass
+                else:
+                    trade=build_trade(r); trade["conf"]=72 + int(r["volatility"]); trade["reason"]=f"TIER2 GOOD FAST Volat {r['volatility']:.2f}% PD {r['pd_pct']:.0f}% RSI {r['rsi']:.0f} ADX {r['adx']:.0f} Vol {r['vol_pct']:.0f}% Align {r['align']}/3"; trade["mode"]=mode+" TIER2 FAST GOOD"; tier2.append(trade)
 
-        cands = tier1 if tier1 else tier2
+        # TIER 3 GUARANTEED - TOP VOLATILITY
+        if not tier1 and not tier2:
+            print("TIER1 0, TIER2 0, BUILD TIER3 GUARANTEED")
+            # Sort by volatility desc, pick best that meets loose criteria
+            raws_sorted=sorted(raws, key=lambda x: x["volatility"] + x["adx"]*0.1, reverse=True)
+            for r in raws_sorted[:8]:
+                if r["volatility"]<0.7: continue
+                if r["dir"]=="BUY" and r["pd_pct"]>60: continue
+                if r["dir"]=="SELL" and r["pd_pct"]<40: continue
+                if r["rsi"]<32 or r["rsi"]>70: continue
+                if r["adx"]<10: continue
+                trade=build_trade(r); trade["conf"]=62 + int(r["volatility"]*2); trade["reason"]=f"TIER3 GUARANTEED FAST - Top Volat {r['volatility']:.2f}% PD {r['pd_pct']:.0f}% RSI {r['rsi']:.0f} ADX {r['adx']:.0f} Vol {r['vol_pct']:.0f}% - MUST TRADE"; trade["mode"]=mode+" TIER3 GUARANTEED"; tier3.append(trade)
+                if len(tier3)>=3: break
+
+        cands = tier1 if tier1 else (tier2 if tier2 else tier3)
 
         if not cands:
-            msg = (f"🛡️ *V27 No FAST entry now* - 20 fast coins checked\n"
-                   f"Avg ADX {avg_adx:.1f} Avg Volatility {avg_volat:.2f}% Mode {mode}\n"
-                   f"Need: Volatility 1.2%+ + PD 0-42% BUY / 58-100% SELL + RSI 40-60 + ADX 14+ + Vol 2%+ + BOS + Align 3/3 + MACD MATCH\n"
-                   f"Market too slow now, try 15m later - Fast coins resting")
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
-            return
+            # FINAL EMERGENCY - pick highest volatility even if not perfect
+            print("EMERGENCY - pick highest volatility")
+            raws_sorted=sorted(raws, key=lambda x: x["volatility"], reverse=True)
+            r=raws_sorted[0]
+            trade=build_trade(r); trade["conf"]=55; trade["reason"]=f"EMERGENCY FAST - Highest Volat {r['volatility']:.2f}% - Market slow but must trade"; trade["mode"]=mode+" EMERGENCY"
+            cands=[trade]
 
-        # Sort by volatility + conf = fastest TP first
-        cands.sort(key=lambda x: x["conf"] + x["volatility"]*5 + x["vol_pct"]*0.3, reverse=True)
+        cands.sort(key=lambda x: x["conf"] + x["volatility"]*5, reverse=True)
         best=cands[0]
-        print(f"BEST FAST {best['code']} {best['dir']} {best['conf']} Volat {best['volatility']:.2f}% Best {len(cands)}/{len(raws)}")
-        if get_active().get("status")=="OPEN":
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN FAST"},timeout=10); return
+        print(f"BEST FAST {best['code']} {best['dir']} {best['conf']} Volat {best['volatility']:.2f}% Mode {best['mode']} Best {len(cands)}/{len(raws)} GUARANTEED")
 
-        r=best; stake=STAKE_NORM if r["conf"]>=75 else STAKE_LOW
+        if get_active().get("status")=="OPEN":
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN"},timeout=10); return
+
+        r=best; stake=STAKE_NORM if r["conf"]>=70 else STAKE_LOW
         set_active({"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(datetime.now()),"mode":r["mode"]})
         loss=stake*r["sl_pct"]*r["lev"]/100; p1=stake*r["tp1_pct"]*r["lev"]/100; p2=stake*r["tp2_pct"]*r["lev"]/100; p3=stake*r["tp3_pct"]*r["lev"]/100
         txt=(f"⚡ *{r['mode']} FAST SCORE {r['conf']}/100 {r['code']} Trade {get_daily()['trades']+1}/3* {'🟢 BUY LONG 🚀 FAST' if r['dir']=='BUY' else '🔴 SELL SHORT 💥 FAST'} ${stake} {r['lev']}x\n"
              f"💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} Volat {r['volatility']:.2f}% FAST | {r['macd']}\n"
-             f"⚡ TP1 FAST {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f}) 0.8xATR - Hit in 30m 🚀\n"
-             f"🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f}) 1.6xATR - 2H\n"
-             f"🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f}) 2.5xATR Runner\n"
-             f"🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f}) TIGHT 1.6%\n"
-             f"{r['smc']}\n{r['mtf']}\n{r['vol_txt']} | {r['liq']}\n✅ {r['reason']} | Market {r['mode']} avgVolat {avg_volat:.2f}% | Best {len(cands)}/{len(raws)} FAST 20 - WILL HIT TP FAST!")
+             f"⚡ TP1 FAST {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f}) 0.8xATR 30m 🚀\n"
+             f"🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f}) 1.6xATR 2H\n"
+             f"🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f}) 2.5xATR\n"
+             f"🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f}) 1.6%\n"
+             f"{r['smc']}\n{r['mtf']}\n{r['vol_txt']}\n✅ {r['reason']} | Avg Volat {avg_volat:.2f}% ADX {avg_adx:.1f} | Best {len(cands)}/{len(raws)} GUARANTEED FAST")
         try:
             b=chart(r)
             if b: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",data={"chat_id":chat_id,"caption":txt,"parse_mode":"Markdown"},files={"photo":b},timeout=20)
@@ -351,8 +307,8 @@ def bg_scan(chat_id):
         print(f"SCAN ERR {e}")
         import traceback; traceback.print_exc()
 
-async def start(u,c): save_chat(u.message.chat.id); await u.message.reply_text(f"⚡ *V27 FAST 20 - TP FAST* 🚀\n✅ 20 FASTEST coins only: PEPE BONK WIF FLOKI BOME SHIB DOGE TRUMP FARTCOIN ZEREBRO WLD HYPE SUI SOL AVAX TAO ARB OP ENA TIA\n✅ No more slow BTC ETH BNB ADA QNT PAXG\n✅ Volatility filter 1.2%+ - Only coins wey dey move fast\n✅ TP tighter: TP1 0.8xATR +22% FAST (30m hit), TP2 1.6x +45%, TP3 2.5x runner, SL 1.6% tight\n✅ Perfect: PD 0-42% BUY 58-100% SELL RSI 40-60 ADX 14+ Vol 2%+ BOS Align 3/3 STRONG MACD MATCH\n✅ Sort by volatility = fastest TP first",parse_mode="Markdown",reply_markup=kb())
-async def scan_cmd(u,c): save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start(); await u.message.reply_text("⚡ SCANNING 20 FAST... Volatility 1.2%+ TP FAST...")
+async def start(u,c): save_chat(u.message.chat.id); await u.message.reply_text(f"⚡ *V28 FAST 20 GUARANTEED PERFECT* 🚀\n✅ 20 FAST: PEPE BONK WIF FLOKI BOME SHIB DOGE TRUMP FARTCOIN ZEREBRO WLD HYPE SUI SOL AVAX TAO ARB OP ENA TIA\n✅ TIER1 PERFECT: Volat 1.2%+ PD 0-42% BUY 58-100% SELL RSI 40-60 ADX14+ Vol2%+ BOS Align3/3 STRONG MACD MATCH\n✅ TIER2 GOOD: Volat0.9%+ PD0-52% BUY 48-100% SELL RSI38-65 ADX12+ Vol-8%+ Align2/3\n✅ TIER3 GUARANTEED: Top volatility PD0-60% BUY 40-100% SELL RSI32-70 ADX10+ MUST TRADE\n✅ No more 'No entry' - Always 1 trade guaranteed FAST TP",parse_mode="Markdown",reply_markup=kb())
+async def scan_cmd(u,c): save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start(); await u.message.reply_text("⚡ SCANNING 20 FAST GUARANTEED... Tier1→Tier2→Tier3 must trade...")
 async def daily_cmd(u,c): save_chat(u.message.chat.id); d=get_daily(); await u.message.reply_text(f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L Trades {d['trades']}/3 ${d['pnl']:.2f}",parse_mode="Markdown",reply_markup=kb())
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
@@ -364,13 +320,13 @@ async def btn_handler(u,c):
         pnl_pct=(price-act["entry"])/act["entry"]*100*act["lev"] if act["dir"]=="BUY" else (act["entry"]-price)/act["entry"]*100*act["lev"]
         await q.message.reply_text(f"📡 {act['coin']} {act['dir']} Now {fmt(price)} Entry {fmt(act['entry'])} P&L {pnl_pct:.2f}% Mode {act.get('mode','')} FAST",reply_markup=kb(act)); return
     if data=="CLS": clear_active(); await q.message.reply_text("✅ Closed FAST",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("⚡ SCANNING 20 FAST..."); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("⚡ SCANNING 20 FAST GUARANTEED..."); return
     if data.startswith("C_"):
         code=data[2:]; raw=analyze_single(code)
         if not raw: await q.message.reply_text(f"⚠️ Fetch fail {code}",reply_markup=kb()); return
         trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual FAST {code} Volat {raw['volatility']:.2f}%"; trade["mode"]="MANUAL FAST"
         set_active({"status":"OPEN","coin":trade["code"],"dir":trade["dir"],"entry":trade["entry"],"sl":trade["sl"],"tp1":trade["tp1"],"tp2":trade["tp2"],"tp3":trade["tp3"],"conf":trade["conf"],"stake":STAKE_NORM,"lev":trade["lev"],"time":str(datetime.now()),"mode":"MANUAL"})
-        b=chart(trade); txt=f"⚡ *V27 MANUAL FAST {trade['conf']}/100 {trade['code']} {trade['dir']} Volat {raw['volatility']:.2f}%* @ {fmt(trade['entry'])}"
+        b=chart(trade); txt=f"⚡ *V28 MANUAL FAST {trade['conf']}/100 {trade['code']} {trade['dir']} Volat {raw['volatility']:.2f}%* @ {fmt(trade['entry'])}"
         if b: await q.message.reply_photo(photo=b,caption=txt,parse_mode="Markdown",reply_markup=kb(get_active()))
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb(get_active()))
 
@@ -414,7 +370,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V27 FAST 20 starting"); a.run_polling(drop_pending_updates=True)
+    print("V28 FAST 20 GUARANTEED starting"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
