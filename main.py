@@ -100,12 +100,6 @@ def close_real_position(symbol, qty_percent=100):
         print(f"Close fail: {e}")
     return None
 
-balance = None
-try:
-    balance = get_futures_balance()
-    print(f"Balance: {balance}")
-except: pass
-
 FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA","PENGU","POPCAT","MEW","MOODENG","GOAT","PNUT","ACT","BRETT","MOG","TURBO","1000PEPE","NEIRO","DOG","SPX","W","LADYS","WOJAK","MEME","PONKE","MYRO","WEN","TOSHI","CAT","BABYDOGE","NOT","DOGS","HMSTR","EIGEN","ZK","ZRO"]
 CRYPTO = {k:f"{k}USDT" for k in FAST}
 CRYPTO["1000PEPE"]="1000PEPEUSDT"
@@ -133,9 +127,7 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): 
-    status = f"Balance ${balance}" if balance is not None else "Connecting..."
-    return f"V41 REAL AI BREAKEVEN {status} LIVE",200
+def home(): return f"V42 SL0.9 TP0.8/1.8/3.2 LIVE",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -263,13 +255,23 @@ def ai_score_perfect(r, market_adx):
     return max(0, min(95, score))
 
 def build_trade(r):
-    price=r["price"]; atr_v=r["atr"]; d=r["dir"]
-    sl_m=0.015; tp1_m=0.7; tp2_m=1.5; tp3_m=2.4
-    sl=price*(1-sl_m) if d=="BUY" else price*(1+sl_m)
-    tp1=price+atr_v*tp1_m if d=="BUY" else price-atr_v*tp1_m
-    tp2=price+atr_v*tp2_m if d=="BUY" else price-atr_v*tp2_m
-    tp3=price+atr_v*tp3_m if d=="BUY" else price-atr_v*tp3_m
-    return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":LEV[r["code"]],"rsi":r["rsi"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']}","vol_txt":r["vol_txt"],"kl":r["kl"],"closes":r["closes"],"sl_pct":abs(sl-price)/price*100,"tp1_pct":abs(tp1-price)/price*100}
+    price=r["price"]; d=r["dir"]
+    # YOUR FIXED SETTINGS: SL 0.90% / TP1 0.80% / TP2 1.8% / TP3 3.2%
+    sl_pct=0.009
+    tp1_pct=0.008
+    tp2_pct=0.018
+    tp3_pct=0.032
+    if d=="BUY":
+        sl=price*(1-sl_pct)
+        tp1=price*(1+tp1_pct)
+        tp2=price*(1+tp2_pct)
+        tp3=price*(1+tp3_pct)
+    else:
+        sl=price*(1+sl_pct)
+        tp1=price*(1-tp1_pct)
+        tp2=price*(1-tp2_pct)
+        tp3=price*(1-tp3_pct)
+    return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":LEV[r["code"]],"rsi":r["rsi"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']}","vol_txt":r["vol_txt"],"kl":r["kl"],"closes":r["closes"],"sl_pct":sl_pct*100,"tp1_pct":tp1_pct*100}
 
 def kb(active=None):
     daily=get_daily(); btns=[]
@@ -282,7 +284,7 @@ def kb(active=None):
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app):
-    try: await app.bot.set_my_commands([BotCommand("start","V41 REAL AI"),BotCommand("scan","SCAN REAL")])
+    try: await app.bot.set_my_commands([BotCommand("start","V42 REAL AI"),BotCommand("scan","SCAN REAL")])
     except: pass
 
 def bg_scan(chat_id):
@@ -317,7 +319,7 @@ def bg_scan(chat_id):
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"Order failed {real_symbol}. Check Futures has ${TRADE_AMOUNT_USDT*2}+ USDT"},timeout=10, proxies=PROXIES)
             return
         set_active({"status":"OPEN","coin":best["code"],"symbol":real_symbol,"dir":best["dir"],"entry":best["entry"],"sl":best["sl"],"tp1":best["tp1"],"tp2":best["tp2"],"tp3":best["tp3"],"conf":best["conf"],"stake":TRADE_AMOUNT_USDT,"lev":best["lev"],"stage":0,"time":str(__import__('datetime').datetime.now())})
-        txt=(f"REAL AI V41 {best['conf']}/100 {best['code']} {best['dir']} @ {fmt(best['entry'])} ${TRADE_AMOUNT_USDT} {best['lev']}x\nORDER ID {order_res.get('orderId')}\nTP1 50% + BE | TP2 30% + LOCK | TP3 20%")
+        txt=(f"REAL V42 {best['conf']}/100 {best['code']} {best['dir']} @ {fmt(best['entry'])} SL 0.9% TP 0.8/1.8/3.2\nORDER {order_res.get('orderId')}\nTP1 50% + BE | TP2 30% | TP3 20%")
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10, proxies=PROXIES)
     except Exception as e:
         print(f"SCAN ERR {e}")
@@ -325,12 +327,12 @@ def bg_scan(chat_id):
 async def start(u,c):
     save_chat(u.message.chat.id)
     bal = get_futures_balance()
-    bal_text = f"\nFutures: ${bal:.2f} USDT\nREAL CONNECTED V41 AI" if bal is not None else "\nBalance fail"
-    await u.message.reply_text(f"V41 REAL AI BREAKEVEN LIVE{bal_text}\nTrade: ${TRADE_AMOUNT_USDT} 10x\nAI: TP1 50%+BE TP2 30%+LOCK TP3 20%",parse_mode="Markdown",reply_markup=kb(get_active()))
+    bal_text = f"\nFutures: ${bal:.2f} USDT\nV42 SL0.9 TP0.8/1.8/3.2" if bal is not None else "\nBalance fail"
+    await u.message.reply_text(f"V42 FIXED LIVE{bal_text}\nTrade: ${TRADE_AMOUNT_USDT} 10x\nSL 0.9% TP1 0.8% TP2 1.8% TP3 3.2%",parse_mode="Markdown",reply_markup=kb(get_active()))
 
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("SCANNING REAL AI...")
+    await u.message.reply_text("SCANNING V42...")
 async def daily_cmd(u,c):
     d=get_daily(); await u.message.reply_text(f"{d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb())
 async def btn_handler(u,c):
@@ -379,7 +381,7 @@ def monitor():
                 act["stage"] = 1
                 set_active(act)
                 try:
-                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"TP1 HIT {act['coin']} +0.8% 50% CLOSED (Profit Locked) SL MOVED TO BREAKEVEN @ {fmt(new_sl)} Remaining 50% RISK-FREE RUNNER!"},timeout=8, proxies=PROXIES)
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"TP1 HIT {act['coin']} +0.8% 50% CLOSED SL->BE @ {fmt(new_sl)}"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="TP2":
                 close_real_position(symbol, 60)
@@ -388,24 +390,24 @@ def monitor():
                 act["stage"] = 2
                 set_active(act)
                 try:
-                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"TP2 HIT {act['coin']} +1.8% 30% MORE CLOSED (80% total) SL MOVED TO TP1 @ {fmt(new_sl)} Profit GUARANTEED! 20% runner to TP3"},timeout=8, proxies=PROXIES)
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"TP2 HIT {act['coin']} +1.8% 30% MORE CLOSED SL->TP1 @ {fmt(new_sl)}"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="TP3":
                 close_real_position(symbol, 100)
                 clear_active()
                 try:
-                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"TP3 HIT {act['coin']} +3% FULL CLOSE! AI BOT SECURED ALL PROFIT!"},timeout=8, proxies=PROXIES)
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"TP3 HIT {act['coin']} +3.2% FULL CLOSE!"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="SL":
                 if stage==0:
                     close_real_position(symbol, 100)
                     clear_active()
-                    try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"SL {act['coin']} Closed. Small loss protected."},timeout=8, proxies=PROXIES)
+                    try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"SL 0.9% {act['coin']} Closed."},timeout=8, proxies=PROXIES)
                     except: pass
                 else:
                     close_real_position(symbol, 100)
                     clear_active()
-                    try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"BE HIT {act['coin']} Breakeven close - TP1/TP2 profit kept! AI saved you!"},timeout=8, proxies=PROXIES)
+                    try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"BE HIT {act['coin']} Breakeven - TP profit kept!"},timeout=8, proxies=PROXIES)
                     except: pass
         except Exception as e:
             print(f"monitor err {e}")
@@ -417,7 +419,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V41 REAL AI BREAKEVEN starting"); a.run_polling(drop_pending_updates=True)
+    print("V42 SL0.9 TP0.8/1.8/3.2 starting"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
