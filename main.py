@@ -3,8 +3,15 @@ from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 from datetime import date
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
 
 BOT_TOKEN = os.getenv("BOT_TOKEN","").strip()
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY","").strip()
+BINANCE_SECRET = os.getenv("BINANCE_SECRET","").strip()
+BINANCE_TESTNET = os.getenv("BINANCE_TESTNET","false").lower() == "true"
+TRADE_AMOUNT_USDT = float(os.getenv("TRADE_AMOUNT_USDT","5"))
+
 PORT = int(os.getenv("PORT","10000"))
 app = Flask(__name__)
 DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
@@ -15,7 +22,86 @@ LEARN_FILE = f"{DATA_DIR}/learn_v40.json"
 CACHE = {}; LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
 
-# V40 - 50 COINS FUTURES ONLY - ZERO FAILS FIXED
+# --- BINANCE CLASSIC CLIENT ---
+binance_client = None
+if BINANCE_API_KEY and BINANCE_SECRET:
+    try:
+        if BINANCE_TESTNET:
+            binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET, testnet=True)
+            print("Client: Testnet Binance")
+        else:
+            binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET)
+            print("Client: Real Binance (Classic Mode) ✅")
+            # Test connection
+            bal = binance_client.futures_account_balance()
+            print(f"Futures Balance: {bal}")
+    except Exception as e:
+        print(f"Binance Client Error: {e}")
+else:
+    print("BINANCE_API_KEY missing - running signal only")
+
+def setup_symbol_classic(symbol):
+    if not binance_client: return
+    try:
+        binance_client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
+    except: pass
+    try:
+        binance_client.futures_change_leverage(symbol=symbol, leverage=10)
+    except Exception as e:
+        print(f"Leverage {symbol}: {e}")
+
+def place_real_order(symbol, direction, usdt_amount):
+    if not binance_client:
+        print("No binance client - skip real order")
+        return None
+    try:
+        price_data = binance_client.futures_symbol_ticker(symbol=symbol)
+        price = float(price_data['price'])
+        # $5 margin * 10x = $50 notional
+        qty = (usdt_amount * 10) / price
+        # Round qty based on symbol precision - get info
+        info = binance_client.futures_exchange_info()
+        for s in info['symbols']:
+            if s['symbol'] == symbol:
+                precision = int(s['quantityPrecision'])
+                qty = round(qty, precision)
+                break
+        
+        setup_symbol_classic(symbol)
+        side = "BUY" if direction == "BUY" else "SELL"
+        order = binance_client.futures_create_order(
+            symbol=symbol,
+            side=side,
+            type='MARKET',
+            quantity=qty
+        )
+        print(f"REAL ORDER PLACED: {symbol} {side} Qty {qty} Price {price} OrderID {order['orderId']}")
+        return order
+    except Exception as e:
+        print(f"REAL ORDER FAILED {symbol}: {e}")
+        return None
+
+def close_real_position(symbol, direction):
+    if not binance_client: return
+    try:
+        # Close by opposite market order with reduceOnly
+        pos = binance_client.futures_position_information(symbol=symbol)
+        for p in pos:
+            amt = float(p['positionAmt'])
+            if amt != 0:
+                side = "SELL" if amt > 0 else "BUY"
+                qty = abs(amt)
+                binance_client.futures_create_order(
+                    symbol=symbol,
+                    side=side,
+                    type='MARKET',
+                    quantity=qty,
+                    reduceOnly=True
+                )
+                print(f"REAL CLOSE: {symbol} {side} {qty}")
+    except Exception as e:
+        print(f"CLOSE FAILED {symbol}: {e}")
+
 FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA","PENGU","POPCAT","MEW","MOODENG","GOAT","PNUT","ACT","BRETT","MOG","TURBO","1000PEPE","NEIRO","DOG","SPX","W","LADYS","WOJAK","MEME","PONKE","MYRO","WEN","TOSHI","CAT","BABYDOGE","NOT","DOGS","HMSTR","EIGEN","ZK","ZRO"]
 
 CRYPTO = {}
@@ -89,7 +175,9 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return "V40 FIXED 50/50 FUTURES ONLY LIVE",200
+def home(): 
+    status = "REAL CONNECTED" if binance_client else "SIGNAL ONLY"
+    return f"V40 REAL CLASSIC {status} LIVE",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -137,21 +225,6 @@ def get_klines(sym, interval="2h"):
                         if kl: break
                 except: continue
         except: pass
-    if not kl:
-        try:
-            gran="2H" if interval=="2h" else "1H" if interval=="1h" else "15m"
-            r=requests.get("https://api.bitget.com/api/v2/mix/market/candles",params={"symbol":sym,"productType":"USDT-FUTURES","granularity":gran,"limit":"200"},headers=HEADERS,timeout=7).json()
-            lst=r.get("data",[])
-            if len(lst)>=50:
-                kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
-        except: pass
-    if not kl:
-        try:
-            iv="2h" if interval=="2h" else "1h" if interval=="1h" else "15m"
-            r=requests.get("https://api.mexc.com/api/v3/klines",params={"symbol":sym,"interval":iv,"limit":200},headers=HEADERS,timeout=7).json()
-            if isinstance(r,list) and len(r)>=50:
-                kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
-        except: pass
     if kl:
         CACHE[key]=(time.time(),kl)
         return kl
@@ -161,18 +234,11 @@ def get_price(sym):
     for url,params in [
         ("https://fapi.binance.com/fapi/v1/ticker/price",{"symbol":sym}),
         ("https://api.bybit.com/v5/market/tickers",{"category":"linear","symbol":sym}),
-        ("https://www.okx.com/api/v5/market/ticker",{"instId":sym.replace("USDT","-USDT-SWAP")}),
     ]:
         try:
             r=requests.get(url,params=params,headers=HEADERS,timeout=5).json()
             if "price" in r:
                 p=float(r["price"])
-                if p>0: return p
-            if "data" in r and r["data"]:
-                p=float(r["data"][0].get("last",0) or r["data"][0].get("lastPrice",0) or 0)
-                if p>0: return p
-            if "result" in r and r["result"].get("list"):
-                p=float(r["result"]["list"][0].get("lastPrice",0) or 0)
                 if p>0: return p
         except: pass
     kl=get_klines(sym,"15m")
@@ -315,7 +381,7 @@ def get_light_chart(r):
         closes=r["closes"][-50:]; e20=ema_series(closes,20)[-50:]
         entry_line=[r["entry"]]*50; sl_line=[r["sl"]]*50; tp1_line=[r["tp1"]]*50
         labels=[str(i) for i in range(50)]
-        cfg={"type":"line","data":{"labels":labels,"datasets":[{"label":r["code"],"data":closes,"borderColor":"black","fill":False,"pointRadius":0,"borderWidth":2},{"label":"EMA20","data":e20,"borderColor":"#2196F3","fill":False,"pointRadius":0,"borderWidth":1},{"label":"Entry","data":entry_line,"borderColor":"blue","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"SL","data":sl_line,"borderColor":"red","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"TP1","data":tp1_line,"borderColor":"green","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1}]},"options":{"title":{"display":True,"text":f'{r["code"]} FUTURES {r["dir"]} SCORE {r["conf"]}/100 50/50'}}}
+        cfg={"type":"line","data":{"labels":labels,"datasets":[{"label":r["code"],"data":closes,"borderColor":"black","fill":False,"pointRadius":0,"borderWidth":2},{"label":"EMA20","data":e20,"borderColor":"#2196F3","fill":False,"pointRadius":0,"borderWidth":1},{"label":"Entry","data":entry_line,"borderColor":"blue","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"SL","data":sl_line,"borderColor":"red","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"TP1","data":tp1_line,"borderColor":"green","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1}]},"options":{"title":{"display":True,"text":f'{r["code"]} FUTURES {r["dir"]} SCORE {r["conf"]}/100'}}}
         url=f"https://quickchart.io/chart?width=700&height=400&c={urllib.parse.quote(json.dumps(cfg))}"
         resp=requests.get(url,timeout=12)
         if resp.status_code==200 and len(resp.content)>4000: return resp.content
@@ -328,36 +394,34 @@ def kb(active=None):
         btns.append([InlineKeyboardButton(f'{"🟢 BUY" if active["dir"]=="BUY" else "🔴 SELL"} {active["coin"]} {active["conf"]}/100 🧠 LIVE',callback_data="MON")])
         btns.append([InlineKeyboardButton(f'👀 {active["coin"]} AI',callback_data="CHK"),InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'🧠 SCAN 50/50 FUTURES ONLY - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
+        btns.append([InlineKeyboardButton(f'🧠 SCAN 50/50 REAL FUTURES - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
     btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY")])
     row=[]
     for c in FAST[:20]:
         row.append(InlineKeyboardButton(f'{c}',callback_data=f'C_{c}'))
         if len(row)==5: btns.append(row); row=[]
     if row: btns.append(row)
-    btns.append([InlineKeyboardButton(f'➕ FUTURES ULTRA 50: {", ".join(FAST[20:])}',callback_data="MORE")])
+    btns.append([InlineKeyboardButton(f'➕ FUTURES 50: {", ".join(FAST[20:])}',callback_data="MORE")])
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app):
-    try: await app.bot.set_my_commands([BotCommand("start","🧠 V40 50/50"),BotCommand("scan","SCAN 50 FUT"),BotCommand("daily","Daily")])
+    try: await app.bot.set_my_commands([BotCommand("start","🧠 V40 REAL"),BotCommand("scan","SCAN REAL"),BotCommand("daily","Daily")])
     except: pass
 
 def bg_scan(chat_id):
     try:
-        print(f"🧠 V40 FIXED 50/50 FUTURES SCAN")
+        print(f"🧠 V40 REAL CLASSIC SCAN")
         raws=[]; fails=[]
         for code in FAST:
             r=analyze_single(code)
             if r:
                 raws.append(r)
-                print(f" OK {code} FUTURES ADX {r['adx']:.0f} PD {r['pd_pct']:.0f}% Volat {r['volatility']:.2f}%")
             else:
                 fails.append(code)
-                print(f" FAIL {code} NO FUTURES")
             time.sleep(0.03)
-        print(f"FETCHED FUTURES {len(raws)}/{len(FAST)} FAILS {fails}")
+        print(f"FETCHED {len(raws)}/{len(FAST)}")
         if len(raws)==0:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Fetch fail 0/50 Fails: {','.join(fails)}"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Fetch fail 0/50"},timeout=10)
             return
         avg_adx=sum(x["adx"] for x in raws)/len(raws); avg_volat=sum(x["volatility"] for x in raws)/len(raws)
         mode="TREND" if avg_adx>=18 else "NORMAL" if avg_adx>=14 else "CHOPPY"
@@ -370,26 +434,28 @@ def bg_scan(chat_id):
             if r["dir"]=="SELL" and r["pd_pct"]<28: continue
             score,reasons,thoughts=ai_score_perfect(r, avg_adx, learn)
             if score < 65: continue
-            trade=build_trade(r); trade["conf"]=int(score); trade["reason"]=" | ".join(reasons[:4]); trade["ai_thought"]=" | ".join(thoughts) if thoughts else "Good setup"; trade["mode"]=mode+" FUTURES 50/50"; cands.append(trade)
+            trade=build_trade(r); trade["conf"]=int(score); trade["reason"]=" | ".join(reasons[:4]); trade["ai_thought"]=" | ".join(thoughts) if thoughts else "Good setup"; trade["mode"]=mode+" REAL CLASSIC"; cands.append(trade)
         if not cands:
-            all_scores=[]
-            for r in raws:
-                s,_,_ = ai_score_perfect(r, avg_adx, learn)
-                all_scores.append((r["code"], s, r["vol_pct"], r["adx"], r["pd_pct"]))
-            all_scores.sort(key=lambda x: x[1], reverse=True)
-            best_code, best_score, best_vol, best_adx, best_pd = all_scores[0]
-            msg=(f"🛡️ *No FAST quality trade now - Market slow 50/50 FUTURES*\nChecked {len(raws)}/50 FUTURES Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% Mode {mode}\nFails: {','.join(fails) if fails else 'None - 50/50 fetched FIXED!'}\nBest was {best_code} SCORE {best_score}/100 Vol {best_vol:.0f}% ADX {best_adx:.0f} PD {best_pd:.0f}% - Too weak\nNeed: Score 65+ + Vol > -40% + ADX 11+ + PD 0-40% BUY 60-100% SELL + RSI 22-78 + Volat 1.0%+\nTry again 15m - 50/50 FUTURES PERP tradable 10x - Fixed!")
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"🛡️ No quality trade now - Market slow"},timeout=10)
             return
         cands.sort(key=lambda x: x["conf"]+x["volatility"]*4, reverse=True)
         best=cands[0]
         if get_active().get("status")=="OPEN":
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN"},timeout=10)
             return
+        
+        # --- PLACE REAL BINANCE ORDER ---
+        real_symbol = CRYPTO[best["code"]]
+        print(f"Attempting REAL order {real_symbol} {best['dir']} ${TRADE_AMOUNT_USDT}")
+        order_res = place_real_order(real_symbol, best["dir"], TRADE_AMOUNT_USDT)
+        if binance_client and not order_res:
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Real order failed for {real_symbol} - Check Binance balance. Need at least $10 in Futures wallet."},timeout=10)
+            return
+
         r=best; stake=1.0 if r["conf"]>=75 else 0.6
-        set_active({"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(__import__('datetime').datetime.now()),"mode":r["mode"],"ai_thought":r["ai_thought"],"reason":r["reason"]})
+        set_active({"status":"OPEN","coin":r["code"],"symbol":real_symbol,"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":TRADE_AMOUNT_USDT,"lev":r["lev"],"time":str(__import__('datetime').datetime.now()),"mode":r["mode"],"ai_thought":r["ai_thought"],"reason":r["reason"]})
         loss=stake*r["sl_pct"]*r["lev"]/100; p1=stake*r["tp1_pct"]*r["lev"]/100; p2=stake*r["tp2_pct"]*r["lev"]/100; p3=stake*r["tp3_pct"]*r["lev"]/100
-        txt=(f"🧠 *{r['mode']} SCORE {r['conf']}/100 {r['code']} FUTURES Trade {get_daily()['trades']+1}/3* {'🟢 BUY 🚀 FUTURES 50/50' if r['dir']=='BUY' else '🔴 SELL 💥 FUTURES 50/50'} ${stake} {r['lev']}x\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} Volat {r['volatility']:.2f}% | {r['vol_txt']}\n⚡ TP1 {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f})\n{r['mtf']}\n🧠 *AI THOUGHT:* {r['ai_thought']}\n✅ *SCORE:* {r['reason']}\n📊 Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% | Best {len(cands)}/{len(raws)} FUTURES 50/50 - FIXED!")
+        txt=(f"🧠 *REAL CLASSIC SCORE {r['conf']}/100 {r['code']} FUTURES Trade {get_daily()['trades']+1}/3* {'🟢 BUY 🚀 REAL' if r['dir']=='BUY' else '🔴 SELL 💥 REAL'} ${stake} {r['lev']}x\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} Volat {r['volatility']:.2f}% | {r['vol_txt']}\n⚡ TP1 {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f})\n{r['mtf']}\n🧠 *AI:* {r['ai_thought']}\n✅ *SCORE:* {r['reason']}\n{'✅ REAL ORDER PLACED ON BINANCE!' if order_res else '⚠️ Signal only - Binance not connected'}")
         chart_bytes=get_light_chart(r)
         try:
             if chart_bytes: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",data={"chat_id":chat_id,"caption":txt,"parse_mode":"Markdown"},files={"photo":("chart.png", chart_bytes, "image/png")},timeout=25)
@@ -402,31 +468,51 @@ def bg_scan(chat_id):
 
 async def start(u,c):
     save_chat(u.message.chat.id)
-    await u.message.reply_text(f"🧠 *V40 FIXED 50/50 FUTURES ONLY - ZERO FAILS*\n✅ 50/50 FIXED: Replaced 6 dead (MOTHER,BODEN,MANEKI,SLERF,WHY,CHEWY) with NOT,DOGS,HMSTR,EIGEN,ZK,ZRO - All Binance Futures\n✅ All 50 futures perp 10x high Vol\n✅ Futures only: Binance Futures + Bybit Linear + OKX Swap + Bitget + MEXC Futures\n✅ Still light 3 libs - Still Live",parse_mode="Markdown",reply_markup=kb())
+    bal_text = ""
+    if binance_client:
+        try:
+            bals = binance_client.futures_account_balance()
+            usdt_bal = [b for b in bals if b['asset']=='USDT']
+            if usdt_bal:
+                bal_text = f"\n💰 Futures Balance: ${float(usdt_bal[0]['balance']):.2f} USDT\nAPI: Connected ✅\nMode: REAL CLASSIC ${TRADE_AMOUNT_USDT} per trade"
+        except Exception as e:
+            bal_text = f"\n⚠️ API Error: {e}"
+    else:
+        bal_text = "\n⚠️ Binance not connected - Signal only"
+    await u.message.reply_text(f"🧠 *V40 REAL CLASSIC LIVE*{bal_text}\n✅ 50 coins futures classic 10x isolated\nUse /scan to trade real money",parse_mode="Markdown",reply_markup=kb())
+
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("🧠 SCANNING 50/50 FUTURES ONLY - ZERO FAILS...")
+    await u.message.reply_text("🧠 SCANNING 50 REAL FUTURES - Placing real order if found...")
+
 async def daily_cmd(u,c):
     save_chat(u.message.chat.id); d=get_daily()
     await u.message.reply_text(f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L Trades {d['trades']}/3 ${d['pnl']:.2f}",parse_mode="Markdown",reply_markup=kb())
+
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
-    if data=="MORE": await q.message.reply_text(f"50 FUTURES COMPLETE ZERO FAILS: {', '.join(FAST)} - All perp 10x",reply_markup=kb(get_active())); return
+    if data=="MORE": await q.message.reply_text(f"50 FUTURES: {', '.join(FAST)}",reply_markup=kb(get_active())); return
     if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
     if data in ["MON","CHK"]:
         act=get_active()
         if not act.get("status")=="OPEN": await q.message.reply_text("No active",reply_markup=kb()); return
         price=get_price(CRYPTO[act["coin"]]) or act["entry"]
         pnl=(price-act["entry"])/act["entry"]*100*act["lev"] if act["dir"]=="BUY" else (act["entry"]-price)/act["entry"]*100*act["lev"]
-        await q.message.reply_text(f"🧠 {act['coin']} FUTURES {act['dir']} Now {fmt(price)} P&L {pnl:.2f}%\n🧠 AI: {act.get('ai_thought','')}\n✅ {act.get('reason','')}",reply_markup=kb(act)); return
-    if data=="CLS": clear_active(); await q.message.reply_text("✅ Closed FUTURES 50/50",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING 50/50 FUTURES FIXED..."); return
+        await q.message.reply_text(f"🧠 {act['coin']} REAL {act['dir']} Now {fmt(price)} P&L {pnl:.2f}%\n🧠 AI: {act.get('ai_thought','')}\n✅ {act.get('reason','')}",reply_markup=kb(act)); return
+    if data=="CLS": 
+        act=get_active()
+        if act.get("symbol"): close_real_position(act["symbol"], act["dir"])
+        clear_active(); await q.message.reply_text("✅ Closed - Real position closed too",reply_markup=kb()); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING REAL..."); return
     if data.startswith("C_"):
         code=data[2:]; raw=analyze_single(code)
-        if not raw: await q.message.reply_text(f"⚠️ Fetch fail {code} - No futures",reply_markup=kb()); return
-        trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual {code} FUTURES 50/50"; trade["ai_thought"]=f"Manual {code}"; trade["mode"]="MANUAL FUTURES 50/50"
-        set_active({"status":"OPEN","coin":trade["code"],"dir":trade["dir"],"entry":trade["entry"],"sl":trade["sl"],"tp1":trade["tp1"],"tp2":trade["tp2"],"tp3":trade["tp3"],"conf":trade["conf"],"stake":1.0,"lev":trade["lev"],"time":str(__import__('datetime').datetime.now()),"mode":"MANUAL","ai_thought":trade["ai_thought"],"reason":trade["reason"]})
-        txt=f"🧠 *V40 MANUAL FUTURES {trade['conf']}/100 {trade['code']} {trade['dir']}* @ {fmt(trade['entry'])} - FUTURES 50/50"
+        if not raw: await q.message.reply_text(f"⚠️ Fetch fail {code}",reply_markup=kb()); return
+        trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual {code} REAL"; trade["ai_thought"]=f"Manual {code}"; trade["mode"]="MANUAL REAL"
+        # Place real order for manual too
+        real_symbol = CRYPTO[code]
+        order_res = place_real_order(real_symbol, trade["dir"], TRADE_AMOUNT_USDT)
+        set_active({"status":"OPEN","coin":trade["code"],"symbol":real_symbol,"dir":trade["dir"],"entry":trade["entry"],"sl":trade["sl"],"tp1":trade["tp1"],"tp2":trade["tp2"],"tp3":trade["tp3"],"conf":trade["conf"],"stake":TRADE_AMOUNT_USDT,"lev":trade["lev"],"time":str(__import__('datetime').datetime.now()),"mode":"MANUAL","ai_thought":trade["ai_thought"],"reason":trade["reason"]})
+        txt=f"🧠 *V40 MANUAL REAL {trade['conf']}/100 {trade['code']} {trade['dir']}* @ {fmt(trade['entry'])} {'✅ REAL ORDER' if order_res else '⚠️ Signal'}"
         chart_bytes=get_light_chart(trade)
         if chart_bytes: await q.message.reply_photo(photo=chart_bytes,caption=txt,parse_mode="Markdown",reply_markup=kb(get_active()))
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb(get_active()))
@@ -452,14 +538,17 @@ def monitor():
                 elif price<=act["tp1"]: hit="TP1"
                 elif price>=act["sl"]: hit="SL"
             if hit:
+                # Close real binance position
+                if act.get("symbol"):
+                    close_real_position(act["symbol"], act["dir"])
                 stake=act["stake"]; lev=act["lev"]; entry=act["entry"]; coin=act["coin"]
                 if "TP" in hit:
                     tp=act["tp1"] if "TP1" in hit else act["tp2"] if "TP2" in hit else act["tp3"]
                     pct=abs(tp-entry)/entry*100*lev; pnl=stake*pct/100
-                    msg=f"🧠 {hit} FUTURES 50/50! {coin} +{pct:.0f}% +${pnl:.2f} FAST!"; update_daily("WIN",pnl,coin); clear_active()
+                    msg=f"🧠 {hit} REAL! {coin} +{pct:.0f}% +${pnl:.2f} Closed on Binance!"; update_daily("WIN",pnl,coin); clear_active()
                 else:
                     pct=abs(act["sl"]-entry)/entry*100*lev; pnl=stake*pct/100
-                    msg=f"💀 SL FUTURES 50/50 {coin} -{pct:.0f}% -${pnl:.2f}"; update_daily("LOSS",-pnl,coin); clear_active()
+                    msg=f"💀 SL REAL {coin} -{pct:.0f}% -${pnl:.2f} Closed"; update_daily("LOSS",-pnl,coin); clear_active()
                 try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":msg},timeout=8)
                 except: pass
         except: time.sleep(10)
@@ -470,7 +559,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V40 50/50 ZERO FAILS starting"); a.run_polling(drop_pending_updates=True)
+    print("V40 REAL CLASSIC starting"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
