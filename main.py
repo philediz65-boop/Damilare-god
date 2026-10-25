@@ -1,4 +1,4 @@
-import os, threading, requests, time, json, urllib.parse
+import os, threading, requests, time, json, urllib.parse, hmac, hashlib
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
@@ -8,8 +8,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN","").strip()
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY","").strip()
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET","").strip()
 BINANCE_SECRET = BINANCE_API_SECRET or os.getenv("BINANCE_SECRET","").strip()
-BINANCE_TESTNET = os.getenv("BINANCE_TESTNET","false").lower() == "true"
-TRADE_AMOUNT_USDT = float(os.getenv("TRADE_AMOUNT_USDT","5"))
+TRADE_AMOUNT_USDT = float(os.getenv("TRADE_AMOUNT_USDT","3"))
 PORT = int(os.getenv("PORT","10000"))
 BINANCE_PROXY = os.getenv("BINANCE_PROXY","").strip()
 
@@ -18,76 +17,96 @@ DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
 ACTIVE_FILE = f"{DATA_DIR}/active_v40.json"
 DAILY_FILE = f"{DATA_DIR}/daily_v40.json"
 CHAT_FILE = f"{DATA_DIR}/chat_v40.json"
-LEARN_FILE = f"{DATA_DIR}/learn_v40.json"
 CACHE = {}; LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
-
 PROXIES = {"http": BINANCE_PROXY, "https": BINANCE_PROXY} if BINANCE_PROXY else None
+
+print(f"DEBUG KEY len {len(BINANCE_API_KEY)} SECRET len {len(BINANCE_SECRET)}")
 if BINANCE_PROXY:
-    print(f"Proxy enabled: {BINANCE_PROXY.split('@')[-1]}")
+    print(f"Proxy: {BINANCE_PROXY.split('@')[-1] if '@' in BINANCE_PROXY else BINANCE_PROXY}")
 
-binance_client = None
-try:
-    from binance.client import Client
-    if BINANCE_API_KEY and BINANCE_SECRET:
-        if BINANCE_TESTNET:
-            binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET, testnet=True)
-            print("Client: Testnet Binance")
-        else:
-            if BINANCE_PROXY:
-                binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET, requests_params={"proxies": PROXIES, "timeout": 20})
-                print(f"Client: Real Binance via Proxy {BINANCE_PROXY.split('@')[-1]} ✅")
-            else:
-                binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET)
-                print("Client: Real Binance (Classic Mode) ✅")
-            try:
-                bal = binance_client.futures_account_balance()
-                usdt = [b for b in bal if b['asset']=='USDT']
-                if usdt:
-                    print(f"Futures Balance: ${usdt[0]['balance']}")
-            except Exception as e:
-                print(f"Balance check: {e}")
-except Exception as e:
-    print(f"Binance init fail (bot continues signal only): {e}")
-    binance_client = None
+# === MANUAL BINANCE FUTURES - FIXES SIGNATURE ERROR ===
+def binance_signed_request(method, endpoint, params={}):
+    if not BINANCE_API_KEY or not BINANCE_SECRET:
+        return None
+    try:
+        params['timestamp'] = int(time.time()*1000)
+        params['recvWindow'] = 10000
+        query = urllib.parse.urlencode(params)
+        signature = hmac.new(BINANCE_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
+        url = f"https://fapi.binance.com{endpoint}?{query}&signature={signature}"
+        headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
+        r = requests.request(method, url, headers=headers, proxies=PROXIES, timeout=20)
+        data = r.json()
+        if r.status_code != 200:
+            print(f"Binance Error {endpoint}: {data}")
+        return data
+    except Exception as e:
+        print(f"Signed req fail {endpoint}: {e}")
+        return None
 
-def setup_symbol_classic(symbol):
-    if not binance_client: return
-    try: binance_client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
+def get_futures_balance():
+    data = binance_signed_request("GET", "/fapi/v2/balance")
+    if isinstance(data, list):
+        for b in data:
+            if b.get('asset') == 'USDT':
+                return float(b.get('balance',0))
+    return None
+
+def setup_symbol(symbol):
+    try: binance_signed_request("POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": "ISOLATED"})
     except: pass
-    try: binance_client.futures_change_leverage(symbol=symbol, leverage=10)
+    try: binance_signed_request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": 10})
     except: pass
 
 def place_real_order(symbol, direction, usdt_amount):
-    if not binance_client: return None
     try:
-        price = float(binance_client.futures_symbol_ticker(symbol=symbol)['price'])
+        rp = requests.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}", proxies=PROXIES, headers=HEADERS, timeout=10).json()
+        price = float(rp.get('price',0))
+        if price==0: return None
         qty = (usdt_amount * 10) / price
-        info = binance_client.futures_exchange_info()
-        for s in info['symbols']:
-            if s['symbol']==symbol:
-                qty = round(qty, int(s['quantityPrecision']))
-                break
-        setup_symbol_classic(symbol)
-        order = binance_client.futures_create_order(symbol=symbol, side="BUY" if direction=="BUY" else "SELL", type='MARKET', quantity=qty)
-        print(f"REAL ORDER PLACED: {symbol} {direction} {qty}")
-        return order
+        # precision
+        try:
+            info = requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo", proxies=PROXIES, timeout=10).json()
+            for s in info['symbols']:
+                if s['symbol']==symbol:
+                    qty = round(qty, int(s['quantityPrecision']))
+                    break
+        except: qty = round(qty, 3)
+        setup_symbol(symbol)
+        order = binance_signed_request("POST", "/fapi/v1/order", {"symbol": symbol, "side": "BUY" if direction=="BUY" else "SELL", "type": "MARKET", "quantity": qty})
+        print(f"ORDER RESULT: {order}")
+        if order and order.get('orderId'):
+            print(f"REAL ORDER PLACED {symbol} {direction} {qty}")
+            return order
+        return None
     except Exception as e:
-        print(f"REAL ORDER FAILED {symbol}: {e}")
+        print(f"ORDER FAIL: {e}")
         return None
 
 def close_real_position(symbol):
-    if not binance_client: return
     try:
-        pos = binance_client.futures_position_information(symbol=symbol)
+        pos = binance_signed_request("GET", "/fapi/v2/positionRisk", {"symbol": symbol})
+        if not isinstance(pos, list): return
         for p in pos:
-            amt = float(p['positionAmt'])
-            if amt!=0:
+            amt = float(p.get('positionAmt',0))
+            if amt != 0:
                 side = "SELL" if amt>0 else "BUY"
-                binance_client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=abs(amt), reduceOnly=True)
-                print(f"CLOSED {symbol} {side}")
+                binance_signed_request("POST", "/fapi/v1/order", {"symbol": symbol, "side": side, "type": "MARKET", "quantity": abs(amt), "reduceOnly": "true"})
+                print(f"CLOSED {symbol}")
     except Exception as e:
         print(f"Close fail: {e}")
+
+# Check on startup
+balance = None
+try:
+    balance = get_futures_balance()
+    if balance is not None:
+        print(f"Futures Balance: ${balance} ✅ CONNECTED REAL!")
+    else:
+        print("Balance check returned None - check API permissions/IP")
+except Exception as e:
+    print(f"Balance check error: {e}")
 
 FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA","PENGU","POPCAT","MEW","MOODENG","GOAT","PNUT","ACT","BRETT","MOG","TURBO","1000PEPE","NEIRO","DOG","SPX","W","LADYS","WOJAK","MEME","PONKE","MYRO","WEN","TOSHI","CAT","BABYDOGE","NOT","DOGS","HMSTR","EIGEN","ZK","ZRO"]
 CRYPTO = {k:f"{k}USDT" for k in FAST}
@@ -121,7 +140,9 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return f"V40 REAL CLASSIC {'CONNECTED' if binance_client else 'SIGNAL ONLY'} LIVE",200
+def home(): 
+    status = f"Balance ${balance}" if balance is not None else "Connecting..."
+    return f"V40 REAL CLASSIC {status} LIVE",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -162,11 +183,6 @@ def ema(arr,p):
     k=2/(p+1); e=sum(arr[:p])/p
     for x in arr[p:]: e=(x-e)*k+e
     return e
-def ema_series(arr,p):
-    if len(arr)<p: return [sum(arr)/len(arr)]*len(arr)
-    k=2/(p+1); e=sum(arr[:p])/p; res=[e]*p
-    for x in arr[p:]: e=(x-e)*k+e; res.append(e)
-    return res
 def rsi_calc(arr,p=14):
     if len(arr)<p+1: return 50
     g=l=0
@@ -223,14 +239,13 @@ def analyze_single(code):
         c15=[k["c"] for k in k15] if k15 else c2; c1=[k["c"] for k in k1] if k1 else c2
         s15,t15=trend_calc(c15); s1,t1=trend_calc(c1); s2,t2=trend_calc(c2)
         vol_pct,vol_txt=vol_calc(k2); e200=ema(c2,200)
-        bos_bull=k2[-1]["h"]>k2[-2]["h"]; bos_bear=k2[-1]["l"]<k2[-2]["l"]
         align=3 if (s15>0 and s1>0 and s2>0) or (s15<0 and s1<0 and s2<0) else 2 if (s1>0 and s2>0) or (s1<0 and s2<0) else 1
         direction="BUY" if s2>=0 else "SELL"; volatility=atr_v/price*100 if price else 0
-        return {"code":code,"price":price,"rsi":rsi_v,"adx":adx_v,"atr":atr_v,"volatility":volatility,"pd_zone":pd_zone,"pd_pct":pd_pct,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"e200":e200,"bos_bull":bos_bull,"bos_bear":bos_bear,"align":align,"dir":direction,"kl":k2,"closes":c2}
+        return {"code":code,"price":price,"rsi":rsi_v,"adx":adx_v,"atr":atr_v,"volatility":volatility,"pd_zone":pd_zone,"pd_pct":pd_pct,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"e200":e200,"align":align,"dir":direction,"kl":k2,"closes":c2}
     except: return None
 
-def ai_score_perfect(r, market_adx, learn={}):
-    score=0; reasons=[]
+def ai_score_perfect(r, market_adx):
+    score=0
     if r["dir"]=="BUY":
         if r["pd_pct"]<=28: score+=20
         elif r["pd_pct"]<=40: score+=14
@@ -252,7 +267,7 @@ def ai_score_perfect(r, market_adx, learn={}):
     if r["align"]==3: score+=10
     elif r["align"]==2: score+=4
     else: score-=3
-    return max(0, min(95, score)), reasons, []
+    return max(0, min(95, score))
 
 def build_trade(r):
     price=r["price"]; atr_v=r["atr"]; d=r["dir"]
@@ -261,7 +276,7 @@ def build_trade(r):
     tp1=price+atr_v*tp1_m if d=="BUY" else price-atr_v*tp1_m
     tp2=price+atr_v*tp2_m if d=="BUY" else price-atr_v*tp2_m
     tp3=price+atr_v*tp3_m if d=="BUY" else price-atr_v*tp3_m
-    return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":LEV[r["code"]],"rsi":r["rsi"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']}","vol_txt":r["vol_txt"],"vol_pct":r["vol_pct"],"kl":r["kl"],"closes":r["closes"],"sl_pct":abs(sl-price)/price*100,"tp1_pct":abs(tp1-price)/price*100,"tp2_pct":abs(tp2-price)/price*100,"tp3_pct":abs(tp3-price)/price*100}
+    return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":LEV[r["code"]],"rsi":r["rsi"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']}","vol_txt":r["vol_txt"],"kl":r["kl"],"closes":r["closes"],"sl_pct":abs(sl-price)/price*100,"tp1_pct":abs(tp1-price)/price*100}
 
 def kb(active=None):
     daily=get_daily(); btns=[]
@@ -292,7 +307,7 @@ def bg_scan(chat_id):
         for r in raws:
             if r["vol_pct"] < -40: continue
             if r["adx"] < 11: continue
-            score,_,_ = ai_score_perfect(r, avg_adx)
+            score = ai_score_perfect(r, avg_adx)
             if score < 65: continue
             trade=build_trade(r); trade["conf"]=int(score); cands.append(trade)
         if not cands:
@@ -306,26 +321,21 @@ def bg_scan(chat_id):
         real_symbol = CRYPTO[best["code"]]
         print(f"Attempt REAL {real_symbol} {best['dir']} ${TRADE_AMOUNT_USDT}")
         order_res = place_real_order(real_symbol, best["dir"], TRADE_AMOUNT_USDT)
-        if binance_client and not order_res:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Order failed for {real_symbol}. Check Futures wallet has $10+ USDT and Isolated 10x allowed."},timeout=10, proxies=PROXIES)
+        if not order_res:
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Order failed {real_symbol}. Check Futures has ${TRADE_AMOUNT_USDT*2}+ USDT"},timeout=10, proxies=PROXIES)
             return
         set_active({"status":"OPEN","coin":best["code"],"symbol":real_symbol,"dir":best["dir"],"entry":best["entry"],"sl":best["sl"],"tp1":best["tp1"],"tp2":best["tp2"],"tp3":best["tp3"],"conf":best["conf"],"stake":TRADE_AMOUNT_USDT,"lev":best["lev"],"time":str(__import__('datetime').datetime.now())})
-        txt=(f"🧠 *REAL CLASSIC {best['conf']}/100 {best['code']} {best['dir']}* @ {fmt(best['entry'])} ${TRADE_AMOUNT_USDT} {best['lev']}x\n{'✅ REAL ORDER ON BINANCE!' if order_res else 'Signal'}")
+        txt=(f"🧠 *REAL CLASSIC {best['conf']}/100 {best['code']} {best['dir']}* @ {fmt(best['entry'])} ${TRADE_AMOUNT_USDT} {best['lev']}x\n✅ REAL ORDER ON BINANCE! ID {order_res.get('orderId')}")
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10, proxies=PROXIES)
     except Exception as e:
         print(f"SCAN ERR {e}"); import traceback; traceback.print_exc()
 
 async def start(u,c):
     save_chat(u.message.chat.id)
-    bal_text=""
-    if binance_client:
-        try:
-            bals=binance_client.futures_account_balance()
-            usdt_bal=[b for b in bals if b['asset']=='USDT']
-            if usdt_bal: bal_text=f"\n💰 Futures: ${float(usdt_bal[0]['balance']):.2f} USDT\nAPI: Connected ✅ REAL CLASSIC"
-        except Exception as e: bal_text=f"\nAPI Error: {e}"
-    else: bal_text="\n⚠️ Binance not connected"
-    await u.message.reply_text(f"🧠 *V40 REAL CLASSIC LIVE*{bal_text}\nTrade: ${TRADE_AMOUNT_USDT} 10x Isolated",parse_mode="Markdown",reply_markup=kb())
+    bal = get_futures_balance()
+    bal_text = f"\n💰 Futures: ${bal:.2f} USDT\n✅ REAL CONNECTED" if bal is not None else f"\n⚠️ Balance fail - checking API"
+    await u.message.reply_text(f"🧠 *V40 REAL CLASSIC LIVE*{bal_text}\nTrade: ${TRADE_AMOUNT_USDT} 10x Isolated",parse_mode="Markdown",reply_markup=kb(get_active()))
+
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
     await u.message.reply_text("🧠 SCANNING REAL...")
@@ -343,7 +353,7 @@ async def btn_handler(u,c):
     if data=="CLS":
         act=get_active()
         if act.get("symbol"): close_real_position(act["symbol"])
-        clear_active(); await q.message.reply_text("✅ Closed",reply_markup=kb()); return
+        clear_active(); await q.message.reply_text("✅ Closed on Binance",reply_markup=kb()); return
     if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING..."); return
 
 def monitor():
