@@ -214,9 +214,9 @@ def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 @app.get("/")
 def home(): 
     bal = get_futures_balance(); amt = get_trade_amount()
-    return f"🚀 V45 FAST ULTIMATE ⚡ Bal ${bal:.2f} Trade ${amt} LIVE 🏆",200
+    return f"🚀 V45 FAST ULTIMATE FIXED ⚡ Bal ${bal:.2f} Trade ${amt} LIVE 🏆",200
 @app.get("/health")
-def health(): return "OK ✅ V45 FAST",200
+def health(): return "OK ✅ V45 FAST FIXED",200
 
 def fmt(v):
     try:
@@ -297,6 +297,7 @@ def vol_calc(kl):
     vols=[k["v"] for k in kl[-20:]]; avg=sum(vols[:-1])/len(vols[:-1]) if vols[:-1] else 1; pct=(vols[-1]-avg)/avg*100 if avg else 0
     return pct,f"Vol {pct:.0f}%"
 
+# ✅ FIXED FUNCTION - NO MORE r["dir"] BUG
 def analyze_single_quick(code):
     try:
         sym=CRYPTO[code]; k15=get_klines(sym,"15m"); k1=get_klines(sym,"1h"); k2=get_klines(sym,"2h")
@@ -310,11 +311,15 @@ def analyze_single_quick(code):
         align=3 if (s15>0 and s1>0 and s2>0) or (s15<0 and s1<0 and s2<0) else 2 if (s1>0 and s2>0) or (s1<0 and s2<0) else 1
         direction="BUY" if s2>=0 else "SELL"; volatility=atr_v/price*100 if price else 0
         conf_quick=0
-        if r["dir"]=="BUY" and pd_pct<=35: conf_quick+=20
-        if r["dir"]=="SELL" and pd_pct>=65: conf_quick+=20
+        if direction=="BUY" and pd_pct<=35: conf_quick+=20
+        if direction=="SELL" and pd_pct>=65: conf_quick+=20
+        if direction=="BUY" and pd_pct<=50: conf_quick+=10
+        if direction=="SELL" and pd_pct>=50: conf_quick+=10
         if adx_v>=18: conf_quick+=15
         return {"code":code,"price":price,"rsi":rsi_v,"adx":adx_v,"atr":atr_v,"volatility":volatility,"pd_zone":pd_zone,"pd_pct":pd_pct,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"align":align,"dir":direction,"kl":k2,"closes":c2,"conf_quick":conf_quick}
-    except: return None
+    except Exception as e:
+        print(f"quick err {code}: {e}")
+        return None
 
 def ai_score_quick(r, market_adx):
     score=r.get("conf_quick",0)
@@ -379,14 +384,14 @@ def kb(active=None):
         btns.append([InlineKeyboardButton(f'🟢 {active["dir"]} {active["coin"]} TP{active.get("stage",0)}/3 💰',callback_data="MON")])
         btns.append([InlineKeyboardButton(f'👀 MONITOR {active["coin"]} LIVE 📊',callback_data="MON"), InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'🔍 SCAN V45 FAST ⚡🏆',callback_data="SCAN")])
+        btns.append([InlineKeyboardButton(f'🔍 SCAN V45 FAST FIXED ⚡🏆',callback_data="SCAN")])
     btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f} 💵',callback_data="DAILY"), InlineKeyboardButton(f'👀 MONITOR 📡',callback_data="MON")])
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app):
     try: await app.bot.set_my_commands([
-        BotCommand("start","🚀 V45 FAST #1"),
-        BotCommand("scan","🔍 SCAN V45 FAST ⚡"),
+        BotCommand("start","🚀 V45 FAST FIXED #1"),
+        BotCommand("scan","🔍 SCAN V45 FAST FIXED ⚡"),
         BotCommand("monitor","👀 MONITOR LIVE 📊"),
         BotCommand("daily","📊 Daily P&L")
     ])
@@ -401,28 +406,29 @@ def bg_scan(chat_id):
             if r: raws.append(r)
             time.sleep(0.02)
         if not raws:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"❌ No data 😴"},timeout=10, proxies=PROXIES); return
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"❌ No data 😴 Quick scan fail"},timeout=10, proxies=PROXIES); return
         avg_adx=sum(x["adx"] for x in raws)/len(raws)
         cands=[]
         for r in raws:
             if r["vol_pct"] < -40: continue
             if r["adx"] < 11: continue
             score = ai_score_quick(r, avg_adx)
-            if score < 50: continue
+            if score < 40: continue
             r["conf_quick"]=score
             cands.append(r)
         if not cands:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"😴 No quality trade now..."},timeout=10, proxies=PROXIES); return
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"😴 No quality trade now... Market dull"},timeout=10, proxies=PROXIES); return
         cands.sort(key=lambda x: x["conf_quick"], reverse=True)
         top10 = cands[:10]
         ultimate_cands=[]
         for r_quick in top10:
             r_full = add_ultimate_analysis(r_quick)
             score = ai_score_perfect(r_full, avg_adx)
-            if score >= 68:
+            if score >= 60:
                 trade=build_trade(r_full); trade["conf"]=int(score); trade["raw"]=r_full; ultimate_cands.append(trade)
         if not ultimate_cands:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"😴 No ULTIMATE trade now, waiting sniper 🎯... Top was "+",".join([x["code"] for x in top10[:3]])},timeout=10, proxies=PROXIES); return
+            top_str=",".join([x["code"] for x in top10[:3]])
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"😴 No ULTIMATE 60+ now, Top was {top_str} waiting sniper 🎯... Try again in 10 min!"},timeout=10, proxies=PROXIES); return
         ultimate_cands.sort(key=lambda x: x["conf"], reverse=True)
         best=ultimate_cands[0]
         if get_active().get("status")=="OPEN":
@@ -432,19 +438,22 @@ def bg_scan(chat_id):
         if not order_res:
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Order failed {real_symbol} 😭 Check Futures has ${amt*2}+ USDT 💸"},timeout=10, proxies=PROXIES); return
         set_active({"status":"OPEN","coin":best["code"],"symbol":real_symbol,"dir":best["dir"],"entry":best["entry"],"sl":best["sl"],"tp1":best["tp1"],"tp2":best["tp2"],"tp3":best["tp3"],"conf":best["conf"],"stake":amt,"lev":best["lev"],"stage":0,"highest":best["entry"],"lowest":best["entry"],"sl_pct":best["sl_pct"],"tp1_pct":best["tp1_pct"],"time":str(__import__('datetime').datetime.now())})
-        txt=(f"🚀 V45 FAST {best['conf']}/100 🏆🔥\n💎 {best['code']} {best['dir']} @ {fmt(best['entry'])}\n💰 ${amt} {best['lev']}x | ATR SL {best['sl_pct']:.2f}% TP {best['tp1_pct']:.2f}/{best['tp2_pct']:.2f}/{best['tp3_pct']:.2f} 🧠\n🆔 ORDER {order_res.get('orderId')} ✅\n🧱 {best['raw']['ob_txt']}\n🐳 {best['raw']['oi_txt']}\n🔄 {best['raw']['ls_txt']}\n🏗️ {best['raw']['bos_txt']}\n📐 {best['raw']['fib_txt']}\n⚡ {best['raw']['div_txt']}\n💵 Bal ${bal:.2f}")
+        txt=(f"🚀 V45 FAST FIXED {best['conf']}/100 🏆🔥\n💎 {best['code']} {best['dir']} @ {fmt(best['entry'])}\n💰 ${amt} {best['lev']}x | ATR SL {best['sl_pct']:.2f}% TP {best['tp1_pct']:.2f}/{best['tp2_pct']:.2f}/{best['tp3_pct']:.2f} 🧠\n🆔 ORDER {order_res.get('orderId')} ✅\n🧱 {best['raw']['ob_txt']}\n🐳 {best['raw']['oi_txt']}\n🔄 {best['raw']['ls_txt']}\n🏗️ {best['raw']['bos_txt']}\n📐 {best['raw']['fib_txt']}\n⚡ {best['raw']['div_txt']}\n💵 Bal ${bal:.2f}")
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10, proxies=PROXIES)
     except Exception as e:
         print(f"SCAN ERR {e}")
+        try:
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Scan error: {e} 😭"},timeout=10, proxies=PROXIES)
+        except: pass
 
 async def start(u,c):
     save_chat(u.message.chat.id); bal = get_futures_balance(); amt = get_trade_amount()
-    bal_text = f"\n💰 Futures: ${bal:.2f} USDT\n🚀 V45 FAST ULTIMATE 🏆⚡" if bal is not None else "\n❌ Balance fail 😭"
+    bal_text = f"\n💰 Futures: ${bal:.2f} USDT\n🚀 V45 FAST FIXED ULTIMATE 🏆⚡" if bal is not None else "\n❌ Balance fail 😭"
     await u.message.reply_text(f"🤖 V45 FAST FIXED LIVE ✨{bal_text}\n💵 Trade: ${amt} 10x (Auto-Compound)\n🧠 ATR Dynamic + Orderbook + OI + LS + BOS + Fib + Div\n⚡ FAST SCAN 12s + Trailing 🏃 + Compound 📈\n👀 /monitor to see LIVE!",parse_mode="Markdown",reply_markup=kb(get_active()))
 
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("🔍 SCANNING V45 FAST... ⚡🧠🏆\nQuick 60 coins → Ultimate TOP 10 only! 12 sec...")
+    await u.message.reply_text("🔍 SCANNING V45 FAST FIXED... ⚡🧠🏆\nQuick 60 coins → Ultimate TOP 10 only! 12 sec...")
 
 async def daily_cmd(u,c):
     d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} 💵",reply_markup=kb(get_active()))
@@ -452,19 +461,19 @@ async def daily_cmd(u,c):
 async def monitor_cmd(u,c):
     save_chat(u.message.chat.id); act=get_active()
     if not act.get("status")=="OPEN":
-        await u.message.reply_text("😴 No active trade now 📭\nPress SCAN V45 FAST to find trade! 🔍🚀🏆",reply_markup=kb()); return
+        await u.message.reply_text("😴 No active trade now 📭\nPress SCAN V45 FAST FIXED to find trade! 🔍🚀🏆",reply_markup=kb()); return
     price=get_price(CRYPTO[act["coin"]]) or act["entry"]; entry=act["entry"]; stake=act["stake"]; lev=act["lev"]
     if act["dir"]=="BUY": pnl_pct=(price-entry)/entry*100
     else: pnl_pct=(entry-price)/entry*100
     pnl_usdt=pnl_pct/100 * stake * lev; pnl_emoji="🟢💰" if pnl_usdt>0 else "🔴📉" if pnl_usdt<0 else "⚪"
     bal=get_futures_balance(); stage=act.get("stage",0)
     stage_txt=["Just Started 🚀","TP1 Done ✅ BE Safe 🛡️","TP2 Done ✅ Trailing 🏃"][stage] if stage<3 else "Running 🌙"
-    txt=(f"👀 MONITOR V45 FAST 📡 LIVE 📊\n━━━━━━━━━━━━━━━\n💎 {act['coin']} {act['dir']} {pnl_emoji}\n📍 Stage: {stage}/3 - {stage_txt}\n📍 Entry: {fmt(entry)}\n💵 Now: {fmt(price)}\n📈 P&L: {pnl_pct:.3f}% (${pnl_usdt:+.4f}) {pnl_emoji}\n━━━━━━━━━━━━━━━\n🛡️ SL: {fmt(act['sl'])} ({act.get('sl_pct',0.9):.2f}%)\n🎯 TP1: {fmt(act['tp1'])} | TP2: {fmt(act['tp2'])} | TP3: {fmt(act['tp3'])}\n━━━━━━━━━━━━━━━\n💰 Bal: ${bal:.2f} | Stake: ${stake}\n🆔 Conf: {act.get('conf',0)}/100 🏆 FAST")
+    txt=(f"👀 MONITOR V45 FAST FIXED 📡 LIVE 📊\n━━━━━━━━━━━━━━━\n💎 {act['coin']} {act['dir']} {pnl_emoji}\n📍 Stage: {stage}/3 - {stage_txt}\n📍 Entry: {fmt(entry)}\n💵 Now: {fmt(price)}\n📈 P&L: {pnl_pct:.3f}% (${pnl_usdt:+.4f}) {pnl_emoji}\n━━━━━━━━━━━━━━━\n🛡️ SL: {fmt(act['sl'])} ({act.get('sl_pct',0.9):.2f}%)\n🎯 TP1: {fmt(act['tp1'])} | TP2: {fmt(act['tp2'])} | TP3: {fmt(act['tp3'])}\n━━━━━━━━━━━━━━━\n💰 Bal: ${bal:.2f} | Stake: ${stake}\n🆔 Conf: {act.get('conf',0)}/100 🏆 FAST FIXED")
     await u.message.reply_text(txt, reply_markup=kb(act))
 
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
-    if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} 💵 V45 FAST",reply_markup=kb(get_active())); return
+    if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} 💵 V45 FAST FIXED",reply_markup=kb(get_active())); return
     if data in ["MON","CHK"]:
         act=get_active()
         if not act.get("status")=="OPEN": await q.message.reply_text("😴 No active trade 📭",reply_markup=kb()); return
@@ -473,13 +482,13 @@ async def btn_handler(u,c):
         else: pnl_pct=(entry-price)/entry*100
         pnl_usdt=pnl_pct/100 * act["stake"] * act["lev"]; pnl_emoji="🟢💰" if pnl_usdt>0 else "🔴"
         stage=act.get("stage",0)
-        txt=(f"👀 V45 FAST MONITOR {act['coin']} LIVE 📊\n{act['dir']} Stage {stage}/3\nEntry {fmt(entry)} → Now {fmt(price)}\nP&L {pnl_pct:.2f}% (${pnl_usdt:+.4f}) {pnl_emoji}\nSL {fmt(act['sl'])} ({act.get('sl_pct',0):.2f}%)")
+        txt=(f"👀 V45 FAST FIXED MONITOR {act['coin']} LIVE 📊\n{act['dir']} Stage {stage}/3\nEntry {fmt(entry)} → Now {fmt(price)}\nP&L {pnl_pct:.2f}% (${pnl_usdt:+.4f}) {pnl_emoji}\nSL {fmt(act['sl'])} ({act.get('sl_pct',0):.2f}%)")
         await q.message.reply_text(txt,reply_markup=kb(act)); return
     if data=="CLS":
         act=get_active()
         if act.get("symbol"): close_real_position(act["symbol"],100)
         clear_active(); await q.message.reply_text("❌ Closed on Binance ✅",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🔍 SCANNING V45 FAST... ⚡🏆"); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🔍 SCANNING V45 FAST FIXED... ⚡🏆"); return
 
 def monitor():
     while True:
@@ -524,23 +533,23 @@ def monitor():
             if hit=="TP1":
                 close_real_position(symbol, 50); new_sl = entry * 1.001 if act["dir"]=="BUY" else entry * 0.999
                 act["sl"] = new_sl; act["stage"] = 1; set_active(act)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯 TP1 HIT! {act['coin']} +{act.get('tp1_pct',0.8):.2f}% 💰 50% CLOSED ✅ SL->BE 🛡️ RISK-FREE! 🚀 V45 FAST"},timeout=8, proxies=PROXIES)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯 TP1 HIT! {act['coin']} +{act.get('tp1_pct',0.8):.2f}% 💰 50% CLOSED ✅ SL->BE 🛡️ RISK-FREE! 🚀 V45 FAST FIXED"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="TP2":
                 close_real_position(symbol, 60); new_sl = act["tp1"]; act["sl"] = new_sl; act["stage"] = 2; set_active(act)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯 TP2 HIT! {act['coin']} +{act.get('tp2_pct',1.8):.2f}% 💰💰 80% total ✅ TRAILING 🏃🌙🚀 V45 FAST"},timeout=8, proxies=PROXIES)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯 TP2 HIT! {act['coin']} +{act.get('tp2_pct',1.8):.2f}% 💰💰 80% total ✅ TRAILING 🏃🌙🚀 V45 FAST FIXED"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="TP3":
                 close_real_position(symbol, 100); clear_active()
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯🎯 TP3 HIT! {act['coin']} +{act.get('tp3_pct',3.2):.2f}% 🌕 FULL CLOSE! 🎉💰💰💰 🔥 V45 FAST!"},timeout=8, proxies=PROXIES)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯🎯 TP3 HIT! {act['coin']} +{act.get('tp3_pct',3.2):.2f}% 🌕 FULL CLOSE! 🎉💰💰💰 🔥 V45 FAST FIXED!"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="TRAIL_SL":
                 close_real_position(symbol, 100); clear_active()
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🏃💰 TRAILING SL HIT! {act['coin']} 🔒 Profit locked! 🧠✅ V45 FAST"},timeout=8, proxies=PROXIES)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🏃💰 TRAILING SL HIT! {act['coin']} 🔒 Profit locked! 🧠✅ V45 FAST FIXED"},timeout=8, proxies=PROXIES)
                 except: pass
             elif hit=="SL":
                 close_real_position(symbol, 100); clear_active()
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🛑 SL {act.get('sl_pct',0.9):.2f}% {act['coin']} Closed 😢 Small loss 🛡️ V45 FAST ATR"},timeout=8, proxies=PROXIES)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🛑 SL {act.get('sl_pct',0.9):.2f}% {act['coin']} Closed 😢 Small loss 🛡️ V45 FAST FIXED ATR"},timeout=8, proxies=PROXIES)
                 except: pass
         except Exception as e:
             print(f"monitor err {e}"); time.sleep(10)
@@ -551,7 +560,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("🚀 V45 FAST ULTIMATE starting ⚡🏆"); a.run_polling(drop_pending_updates=True)
+    print("🚀 V45 FAST FIXED ULTIMATE starting ⚡🏆"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
