@@ -1,4 +1,4 @@
-python-telegram-bot==20.8
-Flask==3.0.0
-requests==2.31.0
-python-binance==1.0.28
+python-telegram-bot
+Flask
+requests
+python-binance
