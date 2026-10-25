@@ -6,11 +6,12 @@ from datetime import date
 
 BOT_TOKEN = os.getenv("BOT_TOKEN","").strip()
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY","").strip()
-BINANCE_SECRET = os.getenv("BINANCE_SECRET","").strip()
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET","").strip()
+BINANCE_SECRET = BINANCE_API_SECRET or os.getenv("BINANCE_SECRET","").strip()
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET","false").lower() == "true"
 TRADE_AMOUNT_USDT = float(os.getenv("TRADE_AMOUNT_USDT","5"))
 PORT = int(os.getenv("PORT","10000"))
-BINANCE_PROXY = os.getenv("BINANCE_PROXY","").strip()  # NEW - Germany Proxy
+BINANCE_PROXY = os.getenv("BINANCE_PROXY","").strip()
 
 app = Flask(__name__)
 DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
@@ -21,12 +22,10 @@ LEARN_FILE = f"{DATA_DIR}/learn_v40.json"
 CACHE = {}; LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
 
-# Proxy dict for requests
 PROXIES = {"http": BINANCE_PROXY, "https": BINANCE_PROXY} if BINANCE_PROXY else None
 if BINANCE_PROXY:
     print(f"Proxy enabled: {BINANCE_PROXY.split('@')[-1]}")
 
-# --- BINANCE CLASSIC CLIENT WITH PROXY ---
 binance_client = None
 try:
     from binance.client import Client
@@ -36,7 +35,6 @@ try:
             print("Client: Testnet Binance")
         else:
             if BINANCE_PROXY:
-                # FIXED: Use Germany proxy to bypass US block
                 binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET, requests_params={"proxies": PROXIES, "timeout": 20})
                 print(f"Client: Real Binance via Proxy {BINANCE_PROXY.split('@')[-1]} ✅")
             else:
