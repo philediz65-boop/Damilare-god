@@ -10,6 +10,7 @@ BINANCE_SECRET = os.getenv("BINANCE_SECRET","").strip()
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET","false").lower() == "true"
 TRADE_AMOUNT_USDT = float(os.getenv("TRADE_AMOUNT_USDT","5"))
 PORT = int(os.getenv("PORT","10000"))
+BINANCE_PROXY = os.getenv("BINANCE_PROXY","").strip()  # NEW - Germany Proxy
 
 app = Flask(__name__)
 DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
@@ -20,7 +21,12 @@ LEARN_FILE = f"{DATA_DIR}/learn_v40.json"
 CACHE = {}; LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
 
-# --- BINANCE CLASSIC CLIENT ---
+# Proxy dict for requests
+PROXIES = {"http": BINANCE_PROXY, "https": BINANCE_PROXY} if BINANCE_PROXY else None
+if BINANCE_PROXY:
+    print(f"Proxy enabled: {BINANCE_PROXY.split('@')[-1]}")
+
+# --- BINANCE CLASSIC CLIENT WITH PROXY ---
 binance_client = None
 try:
     from binance.client import Client
@@ -29,8 +35,13 @@ try:
             binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET, testnet=True)
             print("Client: Testnet Binance")
         else:
-            binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET)
-            print("Client: Real Binance (Classic Mode) ✅")
+            if BINANCE_PROXY:
+                # FIXED: Use Germany proxy to bypass US block
+                binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET, requests_params={"proxies": PROXIES, "timeout": 20})
+                print(f"Client: Real Binance via Proxy {BINANCE_PROXY.split('@')[-1]} ✅")
+            else:
+                binance_client = Client(BINANCE_API_KEY, BINANCE_SECRET)
+                print("Client: Real Binance (Classic Mode) ✅")
             try:
                 bal = binance_client.futures_account_balance()
                 usdt = [b for b in bal if b['asset']=='USDT']
@@ -83,7 +94,6 @@ def close_real_position(symbol):
 FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA","PENGU","POPCAT","MEW","MOODENG","GOAT","PNUT","ACT","BRETT","MOG","TURBO","1000PEPE","NEIRO","DOG","SPX","W","LADYS","WOJAK","MEME","PONKE","MYRO","WEN","TOSHI","CAT","BABYDOGE","NOT","DOGS","HMSTR","EIGEN","ZK","ZRO"]
 CRYPTO = {k:f"{k}USDT" for k in FAST}
 CRYPTO["1000PEPE"]="1000PEPEUSDT"
-
 LEV = {k:10 for k in FAST}
 
 def load_json(p,d):
@@ -132,7 +142,7 @@ def get_klines(sym, interval="2h"):
         return CACHE[key][1]
     kl=None
     try:
-        r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=7).json()
+        r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=7, proxies=PROXIES).json()
         if isinstance(r,list) and len(r)>=50:
             kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
     except: pass
@@ -143,7 +153,7 @@ def get_klines(sym, interval="2h"):
 
 def get_price(sym):
     try:
-        r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=5).json()
+        r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=5, proxies=PROXIES).json()
         if "price" in r: return float(r["price"])
     except: pass
     kl=get_klines(sym,"15m")
@@ -277,7 +287,7 @@ def bg_scan(chat_id):
             if r: raws.append(r)
             time.sleep(0.02)
         if not raws:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"⚠️ No data"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"⚠️ No data"},timeout=10, proxies=PROXIES)
             return
         avg_adx=sum(x["adx"] for x in raws)/len(raws)
         cands=[]
@@ -288,22 +298,22 @@ def bg_scan(chat_id):
             if score < 65: continue
             trade=build_trade(r); trade["conf"]=int(score); cands.append(trade)
         if not cands:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"🛡️ No quality trade now"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"🛡️ No quality trade now"},timeout=10, proxies=PROXIES)
             return
         cands.sort(key=lambda x: x["conf"], reverse=True)
         best=cands[0]
         if get_active().get("status")=="OPEN":
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN"},timeout=10, proxies=PROXIES)
             return
         real_symbol = CRYPTO[best["code"]]
         print(f"Attempt REAL {real_symbol} {best['dir']} ${TRADE_AMOUNT_USDT}")
         order_res = place_real_order(real_symbol, best["dir"], TRADE_AMOUNT_USDT)
         if binance_client and not order_res:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Order failed for {real_symbol}. Check Futures wallet has $10+ USDT and Isolated 10x allowed."},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Order failed for {real_symbol}. Check Futures wallet has $10+ USDT and Isolated 10x allowed."},timeout=10, proxies=PROXIES)
             return
         set_active({"status":"OPEN","coin":best["code"],"symbol":real_symbol,"dir":best["dir"],"entry":best["entry"],"sl":best["sl"],"tp1":best["tp1"],"tp2":best["tp2"],"tp3":best["tp3"],"conf":best["conf"],"stake":TRADE_AMOUNT_USDT,"lev":best["lev"],"time":str(__import__('datetime').datetime.now())})
         txt=(f"🧠 *REAL CLASSIC {best['conf']}/100 {best['code']} {best['dir']}* @ {fmt(best['entry'])} ${TRADE_AMOUNT_USDT} {best['lev']}x\n{'✅ REAL ORDER ON BINANCE!' if order_res else 'Signal'}")
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10)
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt,"parse_mode":"Markdown"},timeout=10, proxies=PROXIES)
     except Exception as e:
         print(f"SCAN ERR {e}"); import traceback; traceback.print_exc()
 
@@ -361,7 +371,7 @@ def monitor():
             if hit:
                 if act.get("symbol"): close_real_position(act["symbol"])
                 clear_active()
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"{hit} {act['coin']} Closed on Binance!"},timeout=8)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"{hit} {act['coin']} Closed on Binance!"},timeout=8, proxies=PROXIES)
                 except: pass
         except: time.sleep(10)
 
