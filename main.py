@@ -15,9 +15,8 @@ LEARN_FILE = f"{DATA_DIR}/learn_v40.json"
 CACHE = {}; LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
 
-# V40 - 35 COINS FUTURES ONLY - ALL 15 ULTRA ADDED COMPLETE
-FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA",
-        "PENGU","POPCAT","MEW","MOODENG","GOAT","PNUT","ACT","BRETT","MOG","TURBO","1000PEPE","NEIRO","DOG","SPX","W"]
+# V40 - 50 COINS FUTURES ONLY
+FAST = ["PEPE","BONK","WIF","FLOKI","BOME","SHIB","DOGE","TRUMP","FARTCOIN","ZEREBRO","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA","PENGU","POPCAT","MEW","MOODENG","GOAT","PNUT","ACT","BRETT","MOG","TURBO","1000PEPE","NEIRO","DOG","SPX","W","LADYS","WOJAK","MEME","MOTHER","PONKE","BODEN","MYRO","WEN","TOSHI","MANEKI","SLERF","CAT","BABYDOGE","WHY","CHEWY"]
 
 CRYPTO = {}
 for k in FAST:
@@ -39,6 +38,21 @@ CRYPTO["NEIRO"]="NEIROUSDT"
 CRYPTO["DOG"]="DOGUSDT"
 CRYPTO["SPX"]="SPXUSDT"
 CRYPTO["W"]="WUSDT"
+CRYPTO["LADYS"]="LADYSUSDT"
+CRYPTO["WOJAK"]="WOJAKUSDT"
+CRYPTO["MEME"]="MEMEUSDT"
+CRYPTO["MOTHER"]="MOTHERUSDT"
+CRYPTO["PONKE"]="PONKEUSDT"
+CRYPTO["BODEN"]="BODENUSDT"
+CRYPTO["MYRO"]="MYROUSDT"
+CRYPTO["WEN"]="WENUSDT"
+CRYPTO["TOSHI"]="TOSHIUSDT"
+CRYPTO["MANEKI"]="MANEKIUSDT"
+CRYPTO["SLERF"]="SLERFUSDT"
+CRYPTO["CAT"]="CATUSDT"
+CRYPTO["BABYDOGE"]="BABYDOGEUSDT"
+CRYPTO["WHY"]="WHYUSDT"
+CRYPTO["CHEWY"]="CHEWYUSDT"
 
 LEV = {k:10 for k in FAST}
 
@@ -75,7 +89,7 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return "V40 FIXED 35/35 FUTURES ONLY LIVE",200
+def home(): return "V40 FIXED 50/50 FUTURES ONLY LIVE",200
 @app.get("/health")
 def health(): return "OK",200
 
@@ -88,27 +102,21 @@ def fmt(v):
         return f"{v:.8f}".rstrip('0').rstrip('.')
     except: return str(v)
 
-# FIXED V40 - 1000PEPE DOUBLE TRY - MUST FETCH 35/35 FUTURES ONLY
 def get_klines(sym, interval="2h"):
     key=f"{sym}_{interval}"
     if key in CACHE and time.time()-CACHE[key][0]<50:
         return CACHE[key][1]
     kl=None
-    
-    # For 1000PEPE, try multiple OKX formats
     okx_inst_list = []
     if sym == "1000PEPEUSDT":
         okx_inst_list = ["1000PEPE-USDT-SWAP", "1000PEPE-USDT", "PEPE-USDT-SWAP"]
     else:
         okx_inst_list = [sym.replace("USDT","-USDT-SWAP"), sym.replace("USDT","-USDT")]
-
-    # 1. BINANCE FUTURES PERP - 1000PEPEUSDT 100% exists here
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=7).json()
         if isinstance(r,list) and len(r)>=50:
             kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
     except: pass
-    # 2. BYBIT LINEAR PERP
     if not kl:
         try:
             iv="120" if interval=="2h" else "60" if interval=="1h" else "15"
@@ -117,7 +125,6 @@ def get_klines(sym, interval="2h"):
             if len(lst)>=50:
                 kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
         except: pass
-    # 3. OKX SWAP PERP - FIXED FOR 1000PEPE
     if not kl:
         try:
             iv="2H" if interval=="2h" else "1H" if interval=="1h" else "15m"
@@ -130,7 +137,6 @@ def get_klines(sym, interval="2h"):
                         if kl: break
                 except: continue
         except: pass
-    # 4. BITGET MIX PERP
     if not kl:
         try:
             gran="2H" if interval=="2h" else "1H" if interval=="1h" else "15m"
@@ -139,7 +145,6 @@ def get_klines(sym, interval="2h"):
             if len(lst)>=50:
                 kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in lst[::-1]]
         except: pass
-    # 5. MEXC FUTURES
     if not kl:
         try:
             iv="2h" if interval=="2h" else "1h" if interval=="1h" else "15m"
@@ -147,7 +152,6 @@ def get_klines(sym, interval="2h"):
             if isinstance(r,list) and len(r)>=50:
                 kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
         except: pass
-
     if kl:
         CACHE[key]=(time.time(),kl)
         return kl
@@ -311,7 +315,7 @@ def get_light_chart(r):
         closes=r["closes"][-50:]; e20=ema_series(closes,20)[-50:]
         entry_line=[r["entry"]]*50; sl_line=[r["sl"]]*50; tp1_line=[r["tp1"]]*50
         labels=[str(i) for i in range(50)]
-        cfg={"type":"line","data":{"labels":labels,"datasets":[{"label":r["code"],"data":closes,"borderColor":"black","fill":False,"pointRadius":0,"borderWidth":2},{"label":"EMA20","data":e20,"borderColor":"#2196F3","fill":False,"pointRadius":0,"borderWidth":1},{"label":"Entry","data":entry_line,"borderColor":"blue","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"SL","data":sl_line,"borderColor":"red","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"TP1","data":tp1_line,"borderColor":"green","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1}]},"options":{"title":{"display":True,"text":f'{r["code"]} FUTURES {r["dir"]} SCORE {r["conf"]}/100 35/35'}}}
+        cfg={"type":"line","data":{"labels":labels,"datasets":[{"label":r["code"],"data":closes,"borderColor":"black","fill":False,"pointRadius":0,"borderWidth":2},{"label":"EMA20","data":e20,"borderColor":"#2196F3","fill":False,"pointRadius":0,"borderWidth":1},{"label":"Entry","data":entry_line,"borderColor":"blue","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"SL","data":sl_line,"borderColor":"red","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1},{"label":"TP1","data":tp1_line,"borderColor":"green","borderDash":[5,5],"fill":False,"pointRadius":0,"borderWidth":1}]},"options":{"title":{"display":True,"text":f'{r["code"]} FUTURES {r["dir"]} SCORE {r["conf"]}/100 50/50'}}}
         url=f"https://quickchart.io/chart?width=700&height=400&c={urllib.parse.quote(json.dumps(cfg))}"
         resp=requests.get(url,timeout=12)
         if resp.status_code==200 and len(resp.content)>4000: return resp.content
@@ -324,23 +328,23 @@ def kb(active=None):
         btns.append([InlineKeyboardButton(f'{"🟢 BUY" if active["dir"]=="BUY" else "🔴 SELL"} {active["coin"]} {active["conf"]}/100 🧠 LIVE',callback_data="MON")])
         btns.append([InlineKeyboardButton(f'👀 {active["coin"]} AI',callback_data="CHK"),InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'🧠 SCAN 35/35 FUTURES ONLY - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
+        btns.append([InlineKeyboardButton(f'🧠 SCAN 50/50 FUTURES ONLY - Trade {daily["trades"]+1}/3 🚀',callback_data="SCAN")])
     btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY")])
     row=[]
     for c in FAST[:20]:
         row.append(InlineKeyboardButton(f'{c}',callback_data=f'C_{c}'))
         if len(row)==5: btns.append(row); row=[]
     if row: btns.append(row)
-    btns.append([InlineKeyboardButton(f'➕ FUTURES ULTRA 15: {", ".join(FAST[20:])}',callback_data="MORE")])
+    btns.append([InlineKeyboardButton(f'➕ FUTURES ULTRA 50: {", ".join(FAST[20:])}',callback_data="MORE")])
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app):
-    try: await app.bot.set_my_commands([BotCommand("start","🧠 V40 35/35"),BotCommand("scan","SCAN 35 FUT"),BotCommand("daily","Daily")])
+    try: await app.bot.set_my_commands([BotCommand("start","🧠 V40 50/50"),BotCommand("scan","SCAN 50 FUT"),BotCommand("daily","Daily")])
     except: pass
 
 def bg_scan(chat_id):
     try:
-        print(f"🧠 V40 FIXED 35/35 FUTURES SCAN")
+        print(f"🧠 V40 FIXED 50/50 FUTURES SCAN")
         raws=[]; fails=[]
         for code in FAST:
             r=analyze_single(code)
@@ -353,7 +357,7 @@ def bg_scan(chat_id):
             time.sleep(0.03)
         print(f"FETCHED FUTURES {len(raws)}/{len(FAST)} FAILS {fails}")
         if len(raws)==0:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Fetch fail 0/35 Fails: {','.join(fails)}"},timeout=10)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Fetch fail 0/50 Fails: {','.join(fails)}"},timeout=10)
             return
         avg_adx=sum(x["adx"] for x in raws)/len(raws); avg_volat=sum(x["volatility"] for x in raws)/len(raws)
         mode="TREND" if avg_adx>=18 else "NORMAL" if avg_adx>=14 else "CHOPPY"
@@ -366,7 +370,7 @@ def bg_scan(chat_id):
             if r["dir"]=="SELL" and r["pd_pct"]<28: continue
             score,reasons,thoughts=ai_score_perfect(r, avg_adx, learn)
             if score < 65: continue
-            trade=build_trade(r); trade["conf"]=int(score); trade["reason"]=" | ".join(reasons[:4]); trade["ai_thought"]=" | ".join(thoughts) if thoughts else "Good setup"; trade["mode"]=mode+" FUTURES 35/35"; cands.append(trade)
+            trade=build_trade(r); trade["conf"]=int(score); trade["reason"]=" | ".join(reasons[:4]); trade["ai_thought"]=" | ".join(thoughts) if thoughts else "Good setup"; trade["mode"]=mode+" FUTURES 50/50"; cands.append(trade)
         if not cands:
             all_scores=[]
             for r in raws:
@@ -374,7 +378,7 @@ def bg_scan(chat_id):
                 all_scores.append((r["code"], s, r["vol_pct"], r["adx"], r["pd_pct"]))
             all_scores.sort(key=lambda x: x[1], reverse=True)
             best_code, best_score, best_vol, best_adx, best_pd = all_scores[0]
-            msg=(f"🛡️ *No FAST quality trade now - Market slow 35/35 FUTURES*\nChecked {len(raws)}/35 FUTURES Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% Mode {mode}\nFails: {','.join(fails) if fails else 'None - 35/35 fetched FIXED!'}\nBest was {best_code} SCORE {best_score}/100 Vol {best_vol:.0f}% ADX {best_adx:.0f} PD {best_pd:.0f}% - Too weak\nNeed: Score 65+ + Vol > -40% + ADX 11+ + PD 0-40% BUY 60-100% SELL + RSI 22-78 + Volat 1.0%+\nTry again 15m - 35/35 FUTURES PERP tradable 10x - Fixed 1000PEPE!")
+            msg=(f"🛡️ *No FAST quality trade now - Market slow 50/50 FUTURES*\nChecked {len(raws)}/50 FUTURES Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% Mode {mode}\nFails: {','.join(fails) if fails else 'None - 50/50 fetched FIXED!'}\nBest was {best_code} SCORE {best_score}/100 Vol {best_vol:.0f}% ADX {best_adx:.0f} PD {best_pd:.0f}% - Too weak\nNeed: Score 65+ + Vol > -40% + ADX 11+ + PD 0-40% BUY 60-100% SELL + RSI 22-78 + Volat 1.0%+\nTry again 15m - 50/50 FUTURES PERP tradable 10x - Fixed!")
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},timeout=10)
             return
         cands.sort(key=lambda x: x["conf"]+x["volatility"]*4, reverse=True)
@@ -385,7 +389,7 @@ def bg_scan(chat_id):
         r=best; stake=1.0 if r["conf"]>=75 else 0.6
         set_active({"status":"OPEN","coin":r["code"],"dir":r["dir"],"entry":r["entry"],"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"tp3":r["tp3"],"conf":r["conf"],"stake":stake,"lev":r["lev"],"time":str(__import__('datetime').datetime.now()),"mode":r["mode"],"ai_thought":r["ai_thought"],"reason":r["reason"]})
         loss=stake*r["sl_pct"]*r["lev"]/100; p1=stake*r["tp1_pct"]*r["lev"]/100; p2=stake*r["tp2_pct"]*r["lev"]/100; p3=stake*r["tp3_pct"]*r["lev"]/100
-        txt=(f"🧠 *{r['mode']} SCORE {r['conf']}/100 {r['code']} FUTURES Trade {get_daily()['trades']+1}/3* {'🟢 BUY 🚀 FUTURES 35/35' if r['dir']=='BUY' else '🔴 SELL 💥 FUTURES 35/35'} ${stake} {r['lev']}x\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} Volat {r['volatility']:.2f}% | {r['vol_txt']}\n⚡ TP1 {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f})\n{r['mtf']}\n🧠 *AI THOUGHT:* {r['ai_thought']}\n✅ *SCORE:* {r['reason']}\n📊 Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% | Best {len(cands)}/{len(raws)} FUTURES 35/35 - FIXED!")
+        txt=(f"🧠 *{r['mode']} SCORE {r['conf']}/100 {r['code']} FUTURES Trade {get_daily()['trades']+1}/3* {'🟢 BUY 🚀 FUTURES 50/50' if r['dir']=='BUY' else '🔴 SELL 💥 FUTURES 50/50'} ${stake} {r['lev']}x\n💰 @ {fmt(r['entry'])} | {r['pd_zone']} {r['pd_pct']:.0f}% ADX {r['adx']:.0f} RSI {r['rsi']:.0f} Volat {r['volatility']:.2f}% | {r['vol_txt']}\n⚡ TP1 {fmt(r['tp1'])} (+{r['tp1_pct']*r['lev']:.0f}% ${p1:.2f})\n🎯 TP2 {fmt(r['tp2'])} (+{r['tp2_pct']*r['lev']:.0f}% ${p2:.2f})\n🚀 TP3 {fmt(r['tp3'])} (+{r['tp3_pct']*r['lev']:.0f}% ${p3:.2f})\n🛑 SL {fmt(r['sl'])} (-{r['sl_pct']*r['lev']:.0f}% -${loss:.2f})\n{r['mtf']}\n🧠 *AI THOUGHT:* {r['ai_thought']}\n✅ *SCORE:* {r['reason']}\n📊 Avg ADX {avg_adx:.1f} Volat {avg_volat:.2f}% | Best {len(cands)}/{len(raws)} FUTURES 50/50 - FIXED!")
         chart_bytes=get_light_chart(r)
         try:
             if chart_bytes: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",data={"chat_id":chat_id,"caption":txt,"parse_mode":"Markdown"},files={"photo":("chart.png", chart_bytes, "image/png")},timeout=25)
@@ -398,16 +402,16 @@ def bg_scan(chat_id):
 
 async def start(u,c):
     save_chat(u.message.chat.id)
-    await u.message.reply_text(f"🧠 *V40 FIXED 35/35 FUTURES ONLY - 1000PEPE FIXED*\n✅ Fixed 1000PEPE fail: Added OKX double format 1000PEPE-USDT-SWAP + 1000PEPE-USDT + Binance futures direct - Must fetch 35/35 now, no more 34/35\n✅ ALL 15 ULTRA: PENGU POPCAT MEW MOODENG GOAT PNUT ACT BRETT MOG TURBO 1000PEPE NEIRO DOG SPX W - All futures perp 10x\n✅ Futures only: Binance Futures + Bybit Linear + OKX Swap + Bitget + MEXC Futures - No spot\n✅ Still light 3 libs - Still Live",parse_mode="Markdown",reply_markup=kb())
+    await u.message.reply_text(f"🧠 *V40 FIXED 50/50 FUTURES ONLY - 1000PEPE FIXED*\n✅ 50/50 FIXED: Added 15 ultra meme LADYS WOJAK MEME MOTHER PONKE BODEN MYRO WEN TOSHI MANEKI SLERF CAT BABYDOGE WHY CHEWY\n✅ All 50 futures perp 10x high Vol\n✅ Futures only: Binance Futures + Bybit Linear + OKX Swap + Bitget + MEXC Futures - No spot\n✅ Still light 3 libs - Still Live",parse_mode="Markdown",reply_markup=kb())
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("🧠 SCANNING 35/35 FUTURES ONLY - 1000PEPE fixed...")
+    await u.message.reply_text("🧠 SCANNING 50/50 FUTURES ONLY - 1000PEPE fixed...")
 async def daily_cmd(u,c):
     save_chat(u.message.chat.id); d=get_daily()
     await u.message.reply_text(f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L Trades {d['trades']}/3 ${d['pnl']:.2f}",parse_mode="Markdown",reply_markup=kb())
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
-    if data=="MORE": await q.message.reply_text(f"35 FUTURES COMPLETE FIXED: {', '.join(FAST)} - All perp 10x - 1000PEPE fixed",reply_markup=kb(get_active())); return
+    if data=="MORE": await q.message.reply_text(f"50 FUTURES COMPLETE FIXED: {', '.join(FAST)} - All perp 10x",reply_markup=kb(get_active())); return
     if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 Daily {d['date']} {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
     if data in ["MON","CHK"]:
         act=get_active()
@@ -415,14 +419,14 @@ async def btn_handler(u,c):
         price=get_price(CRYPTO[act["coin"]]) or act["entry"]
         pnl=(price-act["entry"])/act["entry"]*100*act["lev"] if act["dir"]=="BUY" else (act["entry"]-price)/act["entry"]*100*act["lev"]
         await q.message.reply_text(f"🧠 {act['coin']} FUTURES {act['dir']} Now {fmt(price)} P&L {pnl:.2f}%\n🧠 AI: {act.get('ai_thought','')}\n✅ {act.get('reason','')}",reply_markup=kb(act)); return
-    if data=="CLS": clear_active(); await q.message.reply_text("✅ Closed FUTURES 35/35",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING 35/35 FUTURES FIXED..."); return
+    if data=="CLS": clear_active(); await q.message.reply_text("✅ Closed FUTURES 50/50",reply_markup=kb()); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🧠 SCANNING 50/50 FUTURES FIXED..."); return
     if data.startswith("C_"):
         code=data[2:]; raw=analyze_single(code)
         if not raw: await q.message.reply_text(f"⚠️ Fetch fail {code} - No futures",reply_markup=kb()); return
-        trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual {code} FUTURES 35/35"; trade["ai_thought"]=f"Manual {code}"; trade["mode"]="MANUAL FUTURES 35/35"
+        trade=build_trade(raw); trade["conf"]=75; trade["reason"]=f"Manual {code} FUTURES 50/50"; trade["ai_thought"]=f"Manual {code}"; trade["mode"]="MANUAL FUTURES 50/50"
         set_active({"status":"OPEN","coin":trade["code"],"dir":trade["dir"],"entry":trade["entry"],"sl":trade["sl"],"tp1":trade["tp1"],"tp2":trade["tp2"],"tp3":trade["tp3"],"conf":trade["conf"],"stake":1.0,"lev":trade["lev"],"time":str(__import__('datetime').datetime.now()),"mode":"MANUAL","ai_thought":trade["ai_thought"],"reason":trade["reason"]})
-        txt=f"🧠 *V40 MANUAL FUTURES {trade['conf']}/100 {trade['code']} {trade['dir']}* @ {fmt(trade['entry'])} - FUTURES 35/35"
+        txt=f"🧠 *V40 MANUAL FUTURES {trade['conf']}/100 {trade['code']} {trade['dir']}* @ {fmt(trade['entry'])} - FUTURES 50/50"
         chart_bytes=get_light_chart(trade)
         if chart_bytes: await q.message.reply_photo(photo=chart_bytes,caption=txt,parse_mode="Markdown",reply_markup=kb(get_active()))
         else: await q.message.reply_text(txt,parse_mode="Markdown",reply_markup=kb(get_active()))
@@ -430,7 +434,7 @@ async def btn_handler(u,c):
 def monitor():
     while True:
         try:
-            time.sleep(25); act=get_active()
+            time.sleep(30); act=get_active()
             if not act.get("status")=="OPEN": continue
             price=get_price(CRYPTO[act["coin"]])
             if not price: continue
@@ -452,10 +456,10 @@ def monitor():
                 if "TP" in hit:
                     tp=act["tp1"] if "TP1" in hit else act["tp2"] if "TP2" in hit else act["tp3"]
                     pct=abs(tp-entry)/entry*100*lev; pnl=stake*pct/100
-                    msg=f"🧠 {hit} FUTURES 35/35! {coin} +{pct:.0f}% +${pnl:.2f} FAST!"; update_daily("WIN",pnl,coin); clear_active()
+                    msg=f"🧠 {hit} FUTURES 50/50! {coin} +{pct:.0f}% +${pnl:.2f} FAST!"; update_daily("WIN",pnl,coin); clear_active()
                 else:
                     pct=abs(act["sl"]-entry)/entry*100*lev; pnl=stake*pct/100
-                    msg=f"💀 SL FUTURES 35/35 {coin} -{pct:.0f}% -${pnl:.2f}"; update_daily("LOSS",-pnl,coin); clear_active()
+                    msg=f"💀 SL FUTURES 50/50 {coin} -{pct:.0f}% -${pnl:.2f}"; update_daily("LOSS",-pnl,coin); clear_active()
                 try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":msg},timeout=8)
                 except: pass
         except: time.sleep(10)
@@ -466,7 +470,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V40 35/35 FIXED starting"); a.run_polling(drop_pending_updates=True)
+    print("V40 50/50 FIXED starting"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
