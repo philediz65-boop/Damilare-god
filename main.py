@@ -46,44 +46,50 @@ def get_futures_balance():
                 try: return float(b.get('balance',0))
                 except: pass
     return 7.34
-
 def get_trade_amount(mode="SNIPER"): return 3.0
 
-def get_all_binance_futures():
-    # GET ALL 300+ BINANCE USDT PERP FUTURES - NO FAVORITE!
+def get_real_alt_futures():
+    # ONLY REAL CRYPTO ALTS - NO BTC, NO ETH, NO GOLD, NO STOCK!
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",headers=HEADERS,timeout=15,proxies=PROXIES).json()
+        blacklist = ["BTCUSDT","ETHUSDT","BNBUSDT","USDCUSDT","FDUSDUSDT","BUSDUSDT","TUSDUSDT","USDPUSDT","XAUUSDT","XAUEUR","SOXLUSDT","SKHYNIXUSDT","NVDAUSDT","SNDKUSDT","ZECUSDT"]
+        # These are not crypto alts
+        bad_words = ["XAU","SOXL","SKHYNIX","SNDK","NVDA","AAPL","TSLA","GOLD","SILVER"]
         symbols=[]
         if isinstance(r,list):
             for t in r:
                 sym=t.get('symbol','')
                 if not sym.endswith('USDT'): continue
-                if 'PERP' not in str(t) and True:
-                    pass
-                # Filter: Only USDT, volume > 5M, not stablecoins
+                if sym in blacklist: continue
+                if any(b in sym for b in bad_words): continue
+                # Only perpetual crypto
                 try:
                     vol=float(t.get('quoteVolume',0))
-                    if vol<8000000: continue # Need 8M volume minimum!
-                    if sym in ["USDCUSDT","BUSDUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT"]: continue
-                    symbols.append((sym, vol))
+                    price=float(t.get('lastPrice',0))
+                    if vol<6000000: continue
+                    if price==0: continue
+                    # Get 24h change - we want pumping coins, not dead
+                    change=float(t.get('priceChangePercent',0))
+                    # Allow both up and down movers (for long and short)
+                    if abs(change)<0.5: continue # Skip flat coins
+                    symbols.append((sym, vol, abs(change)))
                 except: continue
-            # Sort by volume highest first, take top 100 pumping
-            symbols.sort(key=lambda x: x[1], reverse=True)
-            top=[s[0] for s in symbols[:100]] # TOP 100 VOLUME!
-            print(f"ALL FUTURES: Found {len(symbols)} total, scanning top {len(top)}")
+            # Sort by volume * volatility - best movers!
+            symbols.sort(key=lambda x: (x[1]*x[2]), reverse=True)
+            top=[s[0] for s in symbols[:80]]
+            print(f"REAL ALTS: Found {len(symbols)} alts, scanning top {len(top)}: {top[:10]}")
             return top
     except Exception as e:
-        print(f"get_all futures err {e}")
-    # Fallback to your old favorites if API fails
-    return ["PEPEUSDT","BONKUSDT","WIFUSDT","FLOKIUSDT","1000PEPEUSDT","TRUMPUSDT","SHIBUSDT","DOGEUSDT","SOLUSDT","WLDUSDT","SUIUSDT","AVAXUSDT","ENAUSDT","TIAUSDT","WUSDT","ACTUSDT","ZKUSDT","GOATUSDT","POPCATUSDT","BRETTUSDT","MEWUSDT","MOGUSDT","TURBOUSDT","PENGUUSDT","MOODENGUSDT","PNUTUSDT","NOTUSDT","DOGSUSDT","HMSTRUSDT","EIGENUSDT","ZROUSDT","SPXUSDT","ARBUSDT","OPUSDT","TAOUSDT","HYPEUSDT","LADYSUSDT","WOJAKUSDT","MEMEUSDT","PONKEUSDT","MYROUSDT","WENUSDT","TOSHIUSDT","CATUSDT","BABYDOGEUSDT","NEIROUSDT","ZEREBROUTDT"]
+        print(f"get_real_alt err {e}")
+    return ["PEPEUSDT","BONKUSDT","WIFUSDT","FLOKIUSDT","1000PEPEUSDT","TRUMPUSDT","SHIBUSDT","DOGEUSDT","SOLUSDT","WLDUSDT","SUIUSDT","AVAXUSDT","ENAUSDT","TIAUSDT","WUSDT","ACTUSDT","ZKUSDT","GOATUSDT","POPCATUSDT","BRETTUSDT","MEWUSDT","MOGUSDT","TURBOUSDT","PENGUUSDT","MOODENGUSDT","PNUTUSDT","NOTUSDT","DOGSUSDT","EIGENUSDT","ZROUSDT","SPXUSDT","ARBUSDT","OPUSDT","TAOUSDT","HYPEUSDT","LADYSUSDT","WOJAKUSDT","MEMEUSDT","PONKEUSDT","MYROUSDT","WENUSDT","TOSHIUSDT","CATUSDT","BABYDOGEUSDT","NEIROUSDT"]
 
 def get_btc_filter():
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",params={"symbol":"BTCUSDT"},headers=HEADERS,timeout=4,proxies=PROXIES).json()
         c=float(r.get('priceChangePercent',0))
-        if c>=1.6: return False, f"BTC +{c:.1f}% Bull - RISKY", c
-        if c<=-1.6: return False, f"BTC {c:.1f}% Bear - DANGER", c
-        return True, f"BTC {c:.1f}% Calm ✅", c
+        if c>=1.6: return True, f"BTC +{c:.1f}% Bull 🌞 Good for LONG", c
+        if c<=-1.6: return True, f"BTC {c:.1f}% Bear 🌧️ Good for SHORT", c
+        return True, f"BTC {c:.1f}% Calm ✅ Good for both", c
     except: return True, "BTC N/A", 0
 
 def get_symbol_filters(symbol):
@@ -97,13 +103,11 @@ def get_symbol_filters(symbol):
                 return qp, ss
     except: pass
     return 3, 0.001
-
 def setup_symbol(symbol):
     try: binance_signed_request("POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": "ISOLATED"})
     except: pass
     try: binance_signed_request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": 10})
     except: pass
-
 def place_real_order(symbol, direction, usdt_amount):
     try:
         rp=requests.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}",proxies=PROXIES,headers=HEADERS,timeout=10).json()
@@ -119,7 +123,6 @@ def place_real_order(symbol, direction, usdt_amount):
         if order and order.get('orderId'): return order
         return None
     except: return None
-
 def close_real_position(symbol, qty_percent=100):
     try:
         pos=binance_signed_request("GET","/fapi/v2/positionRisk",{"symbol":symbol})
@@ -168,9 +171,9 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return f"V58 ALL FUTURES Bal ${get_futures_balance():.2f} LIVE",200
+def home(): return f"V59 REAL ALT Bal ${get_futures_balance():.2f} LIVE",200
 @app.get("/health")
-def health(): return "OK V58 ALL",200
+def health(): return "OK V59",200
 
 def fmt(v):
     try:
@@ -194,14 +197,12 @@ def get_klines(sym, interval="2h"):
     with CACHE_LOCK:
         if key in CACHE: return CACHE[key][1]
     return []
-
 def get_price(sym):
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=4,proxies=PROXIES).json()
         if "price" in r: return float(r["price"])
     except: pass
     kl=get_klines(sym,"15m"); return kl[-1]["c"] if kl else None
-
 def ema(arr,p):
     if len(arr)<p: return sum(arr)/len(arr) if arr else 0
     k=2/(p+1); e=sum(arr[:p])/p
@@ -285,27 +286,40 @@ def analyze_strict(symbol):
         s2,t2,e2,strong2=trend_calc(c2)
         rsi=rsi_calc(c2); stoch=calc_stoch_rsi(c2); adx=adx_calc(k2)
         has_bos, bos_txt=calc_bos(k2)
-        ob_ratio=get_orderbook_ratio(symbol, "BUY" if s2>=0 else "SELL")
+        # Determine direction based on trend
+        if s2>=0: direction="BUY"
+        else: direction="SELL"
+        ob_ratio=get_orderbook_ratio(symbol, direction)
         btc_ok, btc_txt, btc_change=get_btc_filter()
 
-        if not (strong15 and strong1 and strong2): return None, f"{symbol} FAIL: Need STRONG 3/3, got {t15}/{t1}/{t2}"
-        if not has_bos: return None, f"{symbol} FAIL: {bos_txt}"
-        if not (45<=rsi<=57): return None, f"{symbol} FAIL: RSI {rsi:.1f} not 45-57"
-        if stoch>=80: return None, f"{symbol} FAIL: Stoch {stoch:.0f} >=80"
-        if adx<20: return None, f"{symbol} FAIL: ADX {adx:.1f} <20"
-        if ob_ratio<1.15: return None, f"{symbol} FAIL: OB {ob_ratio:.2f} <1.15"
-        if not btc_ok: return None, f"{symbol} FAIL: {btc_txt}"
+        # V59 RELAXED BUT SAFE: Allow 2 STRONG + 1 WEAK, not need 3/3 STRONG!
+        strong_count = int(strong15) + int(strong1) + int(strong2)
+        if strong_count < 2:
+            return None, f"{symbol} FAIL: Need 2/3 STRONG, got {t15}/{t1}/{t2} ({strong_count}/3)"
+        # Check if trends align (all up or all down, allow weak)
+        if not ((s15>=0 and s1>=0 and s2>=0) or (s15<=0 and s1<=0 and s2<=0)):
+            return None, f"{symbol} FAIL: Trend not aligned {t15}/{t1}/{t2}"
+        if not has_bos:
+            return None, f"{symbol} FAIL: {bos_txt}"
+        if not (40<=rsi<=62): # Relaxed from 45-57 to 40-62
+            return None, f"{symbol} FAIL: RSI {rsi:.1f} not 40-62"
+        if stoch>=85: # Relaxed from 80 to 85
+            return None, f"{symbol} FAIL: Stoch {stoch:.0f} >=85"
+        if adx<16: # Relaxed from 20 to 16
+            return None, f"{symbol} FAIL: ADX {adx:.1f} <16"
+        if ob_ratio<1.08: # Relaxed from 1.15 to 1.08
+            return None, f"{symbol} FAIL: OB {ob_ratio:.2f} <1.08"
         ema_dist=abs(price-e2)/e2*100 if e2 else 99
-        if ema_dist>0.45: return None, f"{symbol} FAIL: EMA {ema_dist:.2f}% >0.45%"
+        if ema_dist>0.60: # Relaxed from 0.45% to 0.60%
+            return None, f"{symbol} FAIL: EMA {ema_dist:.2f}% >0.60%"
 
-        direction="BUY" if s2>=0 else "SELL"
         sl_pct=0.015 if "1.5" in RISK_MODE else 0.02 if "2.0" in RISK_MODE else 0.009
         tp1_pct=sl_pct; tp2_pct=sl_pct*2; tp3_pct=sl_pct*3
         if direction=="BUY": sl=price*(1-sl_pct); tp1=price*(1+tp1_pct); tp2=price*(1+tp2_pct); tp3=price*(1+tp3_pct)
         else: sl=price*(1+sl_pct); tp1=price*(1-tp1_pct); tp2=price*(1-tp2_pct); tp3=price*(1-tp3_pct)
 
         code=symbol.replace("USDT","")
-        trade={"symbol":symbol,"code":code,"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl_pct":sl_pct*100,"tp3_pct":tp3_pct*100,"rsi":rsi,"stoch":stoch,"adx":adx,"mtf":f"15m {t15} | 1H {t1} | 2H {t2}","bos":bos_txt,"ob":f"OB {ob_ratio:.2f} Bull 🟢","btc":btc_txt,"ema_dist":f"{ema_dist:.2f}%","conf":85}
+        trade={"symbol":symbol,"code":code,"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl_pct":sl_pct*100,"tp3_pct":tp3_pct*100,"rsi":rsi,"stoch":stoch,"adx":adx,"mtf":f"15m {t15} | 1H {t1} | 2H {t2} ({strong_count}/3 STRONG)","bos":bos_txt,"ob":f"OB {ob_ratio:.2f} Bull 🟢","btc":btc_txt,"ema_dist":f"{ema_dist:.2f}%","conf":82}
         return trade, "PASS"
     except Exception as e:
         return None, f"{symbol} ERR {e}"
@@ -316,15 +330,15 @@ def kb(active=None):
         btns.append([InlineKeyboardButton(f'🟢 {active["dir"]} {active["coin"]} TP{active.get("stage",0)}/3',callback_data="MON")])
         btns.append([InlineKeyboardButton(f'👀 MONITOR {active["coin"]}',callback_data="MON"), InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'🎯 SCAN ALL FUTURES 🧠',callback_data="SCAN"), InlineKeyboardButton(f'🔥 RISK 1.5%',callback_data="RISK15"), InlineKeyboardButton(f'🔥 RISK 2%',callback_data="RISK20")])
+        btns.append([InlineKeyboardButton(f'🎯 SCAN REAL ALTS 🧠',callback_data="SCAN"), InlineKeyboardButton(f'🔥 RISK 1.5%',callback_data="RISK15"), InlineKeyboardButton(f'🔥 RISK 2%',callback_data="RISK20")])
     btns.append([InlineKeyboardButton(f'📊 {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY"), InlineKeyboardButton(f'👀 MONITOR',callback_data="MON")])
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app):
     try:
         await app.bot.set_my_commands([
-            BotCommand("start","🧠 V58 ALL FUTURES"),
-            BotCommand("scan","🧠 SCAN ALL 100+"),
+            BotCommand("start","🧠 V59 REAL ALT"),
+            BotCommand("scan","🧠 SCAN REAL ALTS"),
             BotCommand("risk15","🔥 RISK 1.5%"),
             BotCommand("risk20","🔥 RISK 2%"),
             BotCommand("monitor","👀 MONITOR"),
@@ -335,17 +349,17 @@ async def setup_menu(app):
 def bg_scan(chat_id, risk_mode_override=None):
     try:
         bal=get_futures_balance()
-        all_symbols=get_all_binance_futures()
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"🌐 V58 SCANNING ALL BINANCE FUTURES! 🌐\nScanning top {len(all_symbols)} coins by volume (not favorite)! 30 sec... 🔍"},timeout=10,proxies=PROXIES)
+        all_symbols=get_real_alt_futures()
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"🌐 V59 REAL ALT HUNTER SCANNING! 🌐\nScanning {len(all_symbols)} REAL crypto alts only! No BTC/ETH/GOLD/STOCK!\nBoth LONG & SHORT! 30 sec... 🔍"},timeout=10,proxies=PROXIES)
         raws=[]; fails=[]
         for symbol in all_symbols:
             trade, msg = analyze_strict(symbol)
             if trade: raws.append(trade)
             else: 
-                if len(fails)<12: fails.append(msg)
+                if len(fails)<10: fails.append(msg)
             time.sleep(0.03)
         if not raws:
-            txt=f"🧠 V58 ALL FUTURES - No perfect now ✅ $ safe! Scanned {len(all_symbols)} coins!\n\nTOP 7 REJECTED (GOOD!):\n" + "\n".join(fails[:7]) + f"\n\nNeed STRICT:\n✅ STRONG UPTREND 15m+1H+2H 3/3\n✅ BOS Break MUST\n✅ RSI 45-57 + Stoch <80 + ADX >=20\n✅ OB >=1.15 Whale\n✅ EMA <0.45% + BTC calm\n\nBal ${bal:.2f} safe! Scanned ALL FUTURES! Try 15 min later!"
+            txt=f"🧠 V59 REAL ALTS - No perfect now ✅ $ safe! Scanned {len(all_symbols)} REAL alts!\n\nTOP REJECTED:\n" + "\n".join(fails[:7]) + f"\n\nNeed:\n✅ 2/3 STRONG + Trend aligned (LONG or SHORT!)\n✅ BOS Break MUST\n✅ RSI 40-62 + Stoch <85 + ADX >=16\n✅ OB >=1.08 + EMA <0.60% + BTC\n\nBal ${bal:.2f} safe! Try 10 min later!"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt},timeout=10,proxies=PROXIES); return
         raws.sort(key=lambda x: x['adx'], reverse=True)
         best=raws[0]
@@ -359,7 +373,7 @@ def bg_scan(chat_id, risk_mode_override=None):
         if not order_res:
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Order failed {real_symbol}"},timeout=10,proxies=PROXIES); return
         set_active({"status":"OPEN","coin":best['code'],"symbol":real_symbol,"dir":best['dir'],"entry":best['entry'],"sl":best['sl'],"tp1":best['tp1'],"tp2":best['tp2'],"tp3":best['tp3'],"conf":best['conf'],"stake":amt,"lev":10,"stage":0,"highest":best['entry'],"lowest":best['entry'],"sl_pct":best['sl_pct'],"tp3_pct":best['tp3_pct'],"mode":mode,"time":str(datetime.now())})
-        txt=(f"🧠 V58 ALL FUTURES 85% PERFECT! 🌐🔥\n💎 {best['symbol']} {best['dir']} @ {fmt(best['entry'])}\n💰 ${amt} 10x | SL {best['sl_pct']:.1f}% TP {best['tp3_pct']:.1f}% (1:3)\n🆔 ORDER {order_res.get('orderId')} ✅ {mode}\nScanned {len(all_symbols)} coins! Best coin found!\n━━━━━━━━━━━━━━━\n🧠 5 STRICT RULES PASSED:\n✅ 15m+1H+2H STRONG UPTREND 3/3\n✅ {best['bos']} ✅\n✅ RSI {best['rsi']:.1f} + Stoch {best['stoch']:.0f} + ADX {best['adx']:.1f} ✅\n✅ {best['ob']} ✅\n✅ EMA {best['ema_dist']} + {best['btc']} ✅\n━━━━━━━━━━━━━━━\n📊 {best['mtf']}\n💵 Bal ${bal:.2f} | ALL FUTURES SCANNER 🌐 | MAX LOSS -4% 🛡️")
+        txt=(f"🧠 V59 REAL ALT 82% PERFECT! 🌐🔥\n💎 {best['symbol']} {best['dir']} @ {fmt(best['entry'])}\n💰 ${amt} 10x | SL {best['sl_pct']:.1f}% TP {best['tp3_pct']:.1f}% (1:3)\n🆔 ORDER {order_res.get('orderId')} ✅ {mode}\nScanned {len(all_symbols)} REAL alts! No BTC/ETH/GOLD!\n━━━━━━━━━━━━━━━\n🧠 RULES PASSED:\n✅ {best['mtf']}\n✅ {best['bos']} ✅\n✅ RSI {best['rsi']:.1f} + Stoch {best['stoch']:.0f} + ADX {best['adx']:.1f} ✅\n✅ {best['ob']} ✅\n✅ EMA {best['ema_dist']} + {best['btc']} ✅\n━━━━━━━━━━━━━━━\n💵 Bal ${bal:.2f} | REAL ALT HUNTER 🌐 | LONG & SHORT! 🛡️")
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt},timeout=10,proxies=PROXIES)
     except Exception as e:
         print(f"SCAN ERR {e}"); import traceback; traceback.print_exc()
@@ -368,27 +382,27 @@ def bg_scan(chat_id, risk_mode_override=None):
 
 async def start(u,c):
     save_chat(u.message.chat.id); bal=get_futures_balance()
-    await u.message.reply_text(f"🧠 V58 ALL BINANCE FUTURES SCANNER LIVE 🌐✨\n💰 Futures ${bal:.2f} USDT Risk {RISK_MODE}%\n\n🌐 SCAN ALL 100+ FUTURES (not favorite)!\nSort by volume, pick BEST pumping coin!\n\n5 STRICT RULES:\n✅ STRONG UPTREND 15m+1H+2H 3/3\n✅ BOS Break MUST\n✅ RSI 45-57 + Stoch <80 + ADX >=20\n✅ OB >=1.15 Whale + EMA <0.45%\n✅ BTC calm\n\n💵 RISK15 SL 1.5% $0.45 TP 4.5% $1.35 (1:3)\n💵 RISK20 SL 2% $0.60 TP 6% $1.80 (1:3)\n🛡️ MAX LOSS -4% ROI GUARD!\n\nNo more favorite list! ALL FUTURES!",reply_markup=kb(get_active()))
+    await u.message.reply_text(f"🧠 V59 REAL ALT HUNTER LIVE 🌐✨\n💰 Futures ${bal:.2f} USDT Risk {RISK_MODE}%\n\n🌐 ONLY REAL CRYPTO ALTS! No BTC/ETH/GOLD/STOCK!\nScan 80 top volume alts, LONG & SHORT!\n\nRULES (Relaxed but Safe!):\n✅ 2/3 STRONG + Trend aligned (LONG or SHORT)\n✅ BOS Break MUST\n✅ RSI 40-62 + Stoch <85 + ADX >=16\n✅ OB >=1.08 + EMA <0.60%\n\n💵 RISK15 SL 1.5% $0.45 TP 4.5% $1.35 (1:3)\n💵 RISK20 SL 2% $0.60 TP 6% $1.80 (1:3)\n🛡️ MAX LOSS -4% ROI GUARD!\n\nWill find trade TODAY!",reply_markup=kb(get_active()))
 
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, None),daemon=True).start()
-    await u.message.reply_text("🌐 V58 ALL FUTURES SCANNING... Top 100 volume coins! Not favorite! 30 sec...")
+    await u.message.reply_text("🌐 V59 REAL ALTS SCANNING... Only crypto alts, LONG & SHORT! 30 sec...")
 
 async def risk15_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "1.5"),daemon=True).start()
-    await u.message.reply_text("🔥 V58 ALL FUTURES RISK 1.5%... Scanning ALL!")
+    await u.message.reply_text("🔥 V59 REAL ALTS RISK 1.5%... Scanning REAL alts!")
 
 async def risk20_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "2.0"),daemon=True).start()
-    await u.message.reply_text("🔥🔥 V58 ALL FUTURES RISK 2%... Scanning ALL!")
+    await u.message.reply_text("🔥🔥 V59 REAL ALTS RISK 2%... Scanning REAL alts!")
 
 async def daily_cmd(u,c):
-    d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} V58 ALL FUTURES",reply_markup=kb(get_active()))
+    d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} V59 REAL ALT",reply_markup=kb(get_active()))
 
 async def monitor_cmd(u,c):
     save_chat(u.message.chat.id); act=get_active()
     if not act.get("status")=="OPEN":
-        await u.message.reply_text("😴 No active trade - Press SCAN ALL FUTURES! 🌐",reply_markup=kb()); return
+        await u.message.reply_text("😴 No active trade - Press SCAN REAL ALTS! 🌐",reply_markup=kb()); return
     price=get_price(act["symbol"]) or act["entry"]; entry=act["entry"]; stake=act["stake"]; lev=act["lev"]
     if act["dir"]=="BUY": pnl_pct=(price-entry)/entry*100
     else: pnl_pct=(entry-price)/entry*100
@@ -411,9 +425,9 @@ async def btn_handler(u,c):
         act=get_active()
         if act.get("symbol"): close_real_position(act["symbol"],100)
         clear_active(); await q.message.reply_text("❌ Closed ✅",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id, None),daemon=True).start(); await q.message.reply_text("🌐 V58 ALL FUTURES SCANNING..."); return
-    if data=="RISK15": threading.Thread(target=bg_scan,args=(q.message.chat.id, "1.5"),daemon=True).start(); await q.message.reply_text("🔥 ALL FUTURES RISK 1.5%..."); return
-    if data=="RISK20": threading.Thread(target=bg_scan,args=(q.message.chat.id, "2.0"),daemon=True).start(); await q.message.reply_text("🔥🔥 ALL FUTURES RISK 2%..."); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id, None),daemon=True).start(); await q.message.reply_text("🌐 V59 REAL ALTS SCANNING..."); return
+    if data=="RISK15": threading.Thread(target=bg_scan,args=(q.message.chat.id, "1.5"),daemon=True).start(); await q.message.reply_text("🔥 REAL ALTS RISK 1.5%..."); return
+    if data=="RISK20": threading.Thread(target=bg_scan,args=(q.message.chat.id, "2.0"),daemon=True).start(); await q.message.reply_text("🔥🔥 REAL ALTS RISK 2%..."); return
 
 def monitor():
     while True:
@@ -498,7 +512,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("risk15",risk15_cmd)); a.add_handler(CommandHandler("risk20",risk20_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print(f"V58 ALL FUTURES starting Risk {RISK_MODE}%"); a.run_polling(drop_pending_updates=True)
+    print(f"V59 REAL ALT starting Risk {RISK_MODE}%"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
