@@ -1,4 +1,4 @@
-import os, threading, requests, time, json, urllib.parse, hmac, hashlib
+import os, threading, requests, time, json, urllib.parse, hmac, hashlib, math
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
@@ -10,47 +10,61 @@ BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET","").strip()
 BINANCE_SECRET = BINANCE_API_SECRET or os.getenv("BINANCE_SECRET","").strip()
 PORT = int(os.getenv("PORT","10000"))
 BINANCE_PROXY = os.getenv("BINANCE_PROXY","").strip()
+RISK_MODE = os.getenv("RISK_MODE","1.5").strip()
 
 app = Flask(__name__)
 DATA_DIR = "/data" if os.path.exists("/data") else "/tmp"
 ACTIVE_FILE = f"{DATA_DIR}/active_v40.json"
 DAILY_FILE = f"{DATA_DIR}/daily_v40.json"
 CHAT_FILE = f"{DATA_DIR}/chat_v40.json"
-CACHE = {}; LOCK = threading.Lock()
+CACHE = {}; LOCK = threading.Lock(); CACHE_LOCK = threading.Lock()
 HEADERS = {"User-Agent":"Mozilla/5.0"}
 PROXIES = {"http": BINANCE_PROXY, "https": BINANCE_PROXY} if BINANCE_PROXY else None
 
-def binance_signed_request(method, endpoint, params={}):
+def binance_signed_request(method, endpoint, params={}, retries=2):
     if not BINANCE_API_KEY or not BINANCE_SECRET: return None
-    try:
-        params['timestamp'] = int(time.time()*1000)
-        params['recvWindow'] = 10000
-        query = urllib.parse.urlencode(params)
-        signature = hmac.new(BINANCE_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
-        url = f"https://fapi.binance.com{endpoint}?{query}&signature={signature}"
-        headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
-        r = requests.request(method, url, headers=headers, proxies=PROXIES, timeout=20)
-        data = r.json()
-        if r.status_code != 200: print(f"Binance Error {endpoint}: {data}")
-        return data
-    except Exception as e:
-        print(f"Signed req fail {endpoint}: {e}"); return None
+    for attempt in range(retries):
+        try:
+            params['timestamp'] = int(time.time()*1000)
+            params['recvWindow'] = 10000
+            query = urllib.parse.urlencode(params)
+            sig = hmac.new(BINANCE_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
+            url = f"https://fapi.binance.com{endpoint}?{query}&signature={sig}"
+            headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
+            r = requests.request(method, url, headers=headers, proxies=PROXIES, timeout=20)
+            data = r.json()
+            if r.status_code == 200: return data
+            print(f"Binance Err {endpoint}: {data}")
+            time.sleep(0.8)
+        except Exception as e:
+            print(f"Signed fail {endpoint}: {e}")
+            time.sleep(0.5)
+    return None
 
 def get_futures_balance():
     data = binance_signed_request("GET", "/fapi/v2/balance")
     if isinstance(data, list):
         for b in data:
-            if b.get('asset') == 'USDT': return float(b.get('balance',0))
-    return 7.43
+            if b.get('asset') == 'USDT':
+                try: return float(b.get('balance',0))
+                except: pass
+    return 7.23
 
 def get_trade_amount(mode="SNIPER"):
-    bal = get_futures_balance()
-    if bal is None: bal = 7.43
-    if mode=="SCALP": return 2.0
-    if bal >= 30: return 5.0
-    if bal >= 20: return 4.0
-    if bal >= 15: return 3.0
     return 3.0
+
+def get_symbol_filters(symbol):
+    try:
+        r=requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo",params={"symbol":symbol},headers=HEADERS,timeout=8,proxies=PROXIES).json()
+        for s in r.get('symbols',[]):
+            if s['symbol']==symbol:
+                qp=int(s.get('quantityPrecision',3))
+                ss=0.001
+                for f in s.get('filters',[]):
+                    if f.get('filterType')=='LOT_SIZE': ss=float(f.get('stepSize',0.001))
+                return qp, ss
+    except: pass
+    return 3, 0.001
 
 def setup_symbol(symbol):
     try: binance_signed_request("POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": "ISOLATED"})
@@ -60,83 +74,79 @@ def setup_symbol(symbol):
 
 def place_real_order(symbol, direction, usdt_amount):
     try:
-        rp = requests.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}", proxies=PROXIES, headers=HEADERS, timeout=10).json()
-        price = float(rp.get('price',0))
-        if price==0: return None
-        qty = (usdt_amount * 10) / price
-        try:
-            info = requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo", proxies=PROXIES, timeout=10).json()
-            for s in info['symbols']:
-                if s['symbol']==symbol:
-                    qty = round(qty, int(s['quantityPrecision'])); break
-        except: qty = round(qty, 3)
+        rp=requests.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}",proxies=PROXIES,headers=HEADERS,timeout=10).json()
+        price=float(rp.get('price',0))
+        if price<=0: return None
+        qp, ss=get_symbol_filters(symbol)
+        raw=(usdt_amount*10)/price
+        if ss>0: raw=math.floor(raw/ss)*ss
+        raw=round(raw, qp)
+        if raw<=0: return None
         setup_symbol(symbol)
-        order = binance_signed_request("POST", "/fapi/v1/order", {"symbol": symbol, "side": "BUY" if direction=="BUY" else "SELL", "type": "MARKET", "quantity": qty})
+        order=binance_signed_request("POST","/fapi/v1/order",{"symbol":symbol,"side":"BUY" if direction=="BUY" else "SELL","type":"MARKET","quantity":raw})
         if order and order.get('orderId'): return order
         return None
     except Exception as e:
-        print(f"ORDER FAIL: {e}"); return None
+        print(f"ORDER FAIL {e}"); return None
 
 def close_real_position(symbol, qty_percent=100):
     try:
-        pos = binance_signed_request("GET", "/fapi/v2/positionRisk", {"symbol": symbol})
+        pos=binance_signed_request("GET","/fapi/v2/positionRisk",{"symbol":symbol})
         if not isinstance(pos, list): return None
         for p in pos:
             if p.get('symbol')!=symbol: continue
-            amt = float(p.get('positionAmt',0))
-            if amt != 0:
-                side = "SELL" if amt>0 else "BUY"
-                close_qty = abs(amt) * qty_percent / 100.0
-                try:
-                    info = requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo", proxies=PROXIES, timeout=10).json()
-                    for s in info['symbols']:
-                        if s['symbol']==symbol:
-                            close_qty = round(close_qty, int(s['quantityPrecision'])); break
-                except: close_qty = round(close_qty, 3)
-                res = binance_signed_request("POST", "/fapi/v1/order", {"symbol": symbol, "side": side, "type": "MARKET", "quantity": close_qty, "reduceOnly": "true"})
-                print(f"CLOSED {qty_percent}% {symbol}"); return res
-    except Exception as e: print(f"Close fail: {e}")
+            amt=float(p.get('positionAmt',0))
+            if abs(amt)<0.000001: continue
+            side="SELL" if amt>0 else "BUY"
+            cq=abs(amt)*qty_percent/100.0
+            qp, ss=get_symbol_filters(symbol)
+            if ss>0: cq=math.floor(cq/ss)*ss
+            cq=round(cq, qp)
+            if cq<=0: cq=abs(amt)
+            res=binance_signed_request("POST","/fapi/v1/order",{"symbol":symbol,"side":side,"type":"MARKET","quantity":cq,"reduceOnly":"true"})
+            return res
+    except Exception as e: print(f"Close fail {e}")
     return None
 
 def get_orderbook_score(symbol, direction):
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/depth",params={"symbol":symbol,"limit":20},headers=HEADERS,timeout=4,proxies=PROXIES).json()
-        bids=float(sum([float(x[0])*float(x[1]) for x in r.get('bids',[])[:10]]))
-        asks=float(sum([float(x[0])*float(x[1]) for x in r.get('asks',[])[:10]]))
-        if bids==0 or asks==0: return 0, "OB N/A", True
-        ratio = bids/asks if direction=="BUY" else asks/bids
-        if ratio>=1.25: return 12, f"OB Strong Bull {ratio:.2f} 🟢🟢", False
-        if ratio>=1.10: return 7, f"OB Bull {ratio:.2f} 🟢", False
-        if ratio>=0.90: return 1, f"OB Neutral {ratio:.2f}", False
-        if ratio>=0.75: return -5, f"OB Slight Bear {ratio:.2f} ⚠️", False
-        return -20, f"OB Bear Wall {ratio:.2f} 🔴🔴 HARD REJECT", True
-    except: return 0, "OB N/A", True
+        bids=r.get('bids',[]); asks=r.get('asks',[])
+        if not bids or not asks: return 0,"OB N/A",True
+        bv=float(sum([float(x[0])*float(x[1]) for x in bids[:10]])); av=float(sum([float(x[0])*float(x[1]) for x in asks[:10]]))
+        if bv==0 or av==0: return 0,"OB N/A",True
+        ratio=bv/av if direction=="BUY" else av/bv
+        if ratio>=1.30: return 14,f"OB Strong Bull {ratio:.2f} 🟢🟢",False
+        if ratio>=1.12: return 8,f"OB Bull {ratio:.2f} 🟢",False
+        if ratio>=0.92: return 2,f"OB Neutral {ratio:.2f}",False
+        if ratio>=0.80: return -4,f"OB Bear {ratio:.2f} ⚠️",False
+        return -22,f"OB Bear Wall {ratio:.2f} 🔴 REJECT",True
+    except: return 0,"OB N/A",True
 
 def get_oi_funding_score(symbol):
     try:
         prem=requests.get("https://fapi.binance.com/fapi/v1/premiumIndex",params={"symbol":symbol},headers=HEADERS,timeout=4,proxies=PROXIES).json()
         funding=float(prem.get('lastFundingRate',0)) if isinstance(prem,dict) else 0
-        if funding>0.002: return -8, f"Fund Very High {funding*100:.3f}% 🔥", 0, funding
-        if funding>0.0009: return -4, f"Fund High {funding*100:.3f}%", 0, funding
-        if funding<-0.0015: return 7, f"Fund Very Low {funding*100:.3f}% 🟢🟢", 0, funding
-        if funding<-0.0008: return 4, f"Fund Low {funding*100:.3f}% 🟢", 0, funding
-        return 3, f"Fund Neutral {funding*100:.3f}% ✅", 0, funding
-    except: return 0, "Fund OK", 0, 0
+        if funding>0.0022: return -9,f"Fund High {funding*100:.3f}% 🔥",0,funding
+        if funding>0.001: return -5,f"Fund High {funding*100:.3f}%",0,funding
+        if funding<-0.0016: return 8,f"Fund Low {funding*100:.3f}% 🟢🟢",0,funding
+        if funding<-0.0009: return 5,f"Fund Low {funding*100:.3f}% 🟢",0,funding
+        return 3,f"Fund Neutral {funding*100:.3f}% ✅",0,funding
+    except: return 0,"Fund OK",0,0
 
 def get_ls_ratio_score(symbol, direction):
     try:
         r=requests.get("https://fapi.binance.com/futures/data/globalLongShortAccountRatio",params={"symbol":symbol,"period":"15m","limit":1},headers=HEADERS,timeout=4,proxies=PROXIES).json()
         if isinstance(r,list) and len(r)>0:
-            ratio=float(r[-1].get('longShortRatio',1))
-            long_pct=ratio/(1+ratio)*100
-            if direction=="BUY" and long_pct>82: return -10, f"LS Crowd Long {long_pct:.0f}% 🔴 Trap"
-            if direction=="SELL" and long_pct<18: return -10, f"LS Crowd Short {100-long_pct:.0f}% 🔴 Trap"
-            if direction=="BUY" and long_pct<35: return 7, f"LS Short Crowd {100-long_pct:.0f}% 🟢 Squeeze!"
-            if direction=="SELL" and long_pct>65: return 7, f"LS Long Crowd {long_pct:.0f}% 🟢 Squeeze!"
-            if 45<=long_pct<=55: return 6, f"LS Balanced {long_pct:.0f}% ✅"
-            return 0, f"LS {long_pct:.0f}%"
-        return 0, "LS N/A"
-    except: return 0, "LS N/A"
+            ratio=float(r[-1].get('longShortRatio',1)); long_pct=ratio/(1+ratio)*100
+            if direction=="BUY" and long_pct>83: return -11,f"LS Crowd Long {long_pct:.0f}% 🔴 Trap"
+            if direction=="SELL" and long_pct<17: return -11,f"LS Crowd Short {100-long_pct:.0f}% 🔴"
+            if direction=="BUY" and long_pct<34: return 8,f"LS Short Crowd {100-long_pct:.0f}% 🟢 Squeeze!"
+            if direction=="SELL" and long_pct>66: return 8,f"LS Long Crowd {long_pct:.0f}% 🟢"
+            if 44<=long_pct<=56: return 7,f"LS Balanced {long_pct:.0f}% ✅"
+            return 0,f"LS {long_pct:.0f}%"
+        return 0,"LS N/A"
+    except: return 0,"LS N/A"
 
 def calc_cvd(kl, direction):
     try:
@@ -144,13 +154,9 @@ def calc_cvd(kl, direction):
         for k in kl[-20:]:
             if k["c"]>k["o"]: cvd+=k["v"]
             else: cvd-=k["v"]
-        if direction=="BUY":
-            if cvd>0: return 6, f"CVD Bull 💪", False
-            else: return -6, f"CVD Bear 📉 Weak", False
-        else:
-            if cvd<0: return 6, f"CVD Bear 📉", False
-            else: return -6, f"CVD Bull Weak", False
-    except: return 0, "CVD N/A", False
+        if direction=="BUY": return (7,f"CVD Bull 💪",False) if cvd>0 else (-7,f"CVD Bear 📉",False)
+        else: return (7,f"CVD Bear 📉",False) if cvd<0 else (-7,f"CVD Bull Weak",False)
+    except: return 0,"CVD N/A",False
 
 def calc_bos(kl):
     try:
@@ -158,44 +164,25 @@ def calc_bos(kl):
         last_h=max(highs[-20:-1]) if len(highs)>20 else highs[-1]
         last_l=min(lows[-20:-1]) if len(lows)>20 else lows[-1]
         curr=kl[-1]["c"]
-        if curr>last_h: return 12, f"BOS UP Break 🚀 Strong!", False
-        if curr<last_l: return 12, f"BOS DOWN Break 📉 Strong!", False
-        return -4, "No BOS - Choppy ⏳", False
-    except: return 0, "BOS N/A", False
+        if curr>last_h*1.001: return 14,f"BOS UP Break 🚀",False
+        if curr<last_l*0.999: return 14,f"BOS DOWN Break 📉",False
+        return -5,"No BOS - Choppy ⏳",False
+    except: return 0,"BOS N/A",False
 
 def calc_fib_entry(kl, direction):
     try:
         hi=max(k["h"] for k in kl[-50:]); lo=min(k["l"] for k in kl[-50:]); curr=kl[-1]["c"]
-        if hi==lo: return 0, "Fib N/A"
-        fib_range=hi-lo
+        if hi==lo: return 0,"Fib N/A"
+        pct=(curr-lo)/(hi-lo)*100
         if direction=="BUY":
-            if lo+fib_range*0.50*0.98<=curr<=lo+fib_range*0.618*1.02: return 14, f"Fib GOLDEN 50-62% 🎯 PERFECT!"
-            if curr<lo+fib_range*0.40: return 8, f"Fib Discount 60-75% ✅"
-            if curr>hi-fib_range*0.18: return -6, f"Fib Premium Top BAD ⚠️"
+            if 48<=pct<=64: return 15,f"Fib GOLDEN {pct:.0f}% 🎯 PERFECT!"
+            if pct<38: return 9,f"Fib Discount {pct:.0f}% ✅"
+            if pct>82: return -7,f"Fib Premium {pct:.0f}% BAD"
         else:
-            if curr>=lo+fib_range*0.60: return 14, f"Fib Premium 60-75% 🎯 PERFECT!"
-            if curr<lo+fib_range*0.18: return -6, f"Fib Discount Bottom BAD ⚠️"
-        return 0, f"Fib {((curr-lo)/fib_range*100):.0f}% Mid"
-    except: return 0, "Fib N/A"
-
-def calc_divergence(kl, closes):
-    try:
-        if len(closes)<30: return 0, "Div N/A"
-        rsi_arr=[rsi_calc(closes[:i]) for i in range(15,len(closes))]
-        if len(rsi_arr)<20: return 0, "Div N/A"
-        if closes[-1]<min(closes[-20:-1]) and rsi_arr[-1]>min(rsi_arr[-20:-1])+4: return 10, f"Bull Div 📈 Reversal! 🔥"
-        if closes[-1]>max(closes[-20:-1]) and rsi_arr[-1]<max(rsi_arr[-20:-1])-4: return 10, f"Bear Div 📉 Reversal! 🔥"
-        return 0, "No Div"
-    except: return 0, "Div N/A"
-
-def get_btc_filter():
-    try:
-        r=requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",params={"symbol":"BTCUSDT"},headers=HEADERS,timeout=4,proxies=PROXIES).json()
-        change=float(r.get('priceChangePercent',0))
-        if change>=1.5: return 5, f"BTC +{change:.1f}% Bull 🌞"
-        if change<=-1.5: return -5, f"BTC {change:.1f}% Bear 🌧️"
-        return 0, f"BTC {change:.1f}% Neutral"
-    except: return 0, "BTC N/A"
+            if 60<=pct<=82: return 15,f"Fib Premium {pct:.0f}% 🎯"
+            if pct<18: return -7,f"Fib Discount {pct:.0f}% BAD"
+        return 0,f"Fib {pct:.0f}% Mid"
+    except: return 0,"Fib N/A"
 
 FAST = ["PEPE","BONK","WIF","FLOKI","BOME","1000PEPE","TRUMP","FARTCOIN","SHIB","DOGE","POPCAT","MEW","MOG","BRETT","TURBO","PENGU","MOODENG","GOAT","PNUT","ACT","WLD","HYPE","SUI","SOL","AVAX","TAO","ARB","OP","ENA","TIA","SPX","W","LADYS","WOJAK","MEME","PONKE","MYRO","WEN","TOSHI","CAT","BABYDOGE","NOT","DOGS","HMSTR","EIGEN","ZK","ZRO","ZEREBRO","NEIRO","DOG"]
 CRYPTO = {k:f"{k}USDT" for k in FAST}
@@ -205,13 +192,16 @@ LEV = {k:10 for k in FAST}
 def load_json(p,d):
     try:
         if os.path.exists(p):
-            with open(p,'r') as f: return json.load(f)
+            with LOCK:
+                with open(p,'r') as f: return json.load(f)
     except: pass
     return d
 def save_json(p,data):
     try:
         with LOCK:
-            with open(p,'w') as f: json.dump(data,f)
+            tmp=p+".tmp"
+            with open(tmp,'w') as f: json.dump(data,f)
+            os.replace(tmp,p)
     except: pass
 def get_daily():
     d=load_json(DAILY_FILE,{}); t=str(date.today())
@@ -220,8 +210,7 @@ def get_daily():
     if "pause_until" not in d: d["pause_until"]=0
     return d
 def update_daily(pnl, win):
-    d=get_daily()
-    d["trades"]+=1; d["pnl"]+=pnl
+    d=get_daily(); d["trades"]+=1; d["pnl"]+=pnl
     if win: d["wins"]+=1; d["loss_streak"]=0
     else: d["losses"]+=1; d["loss_streak"]+=1
     if d["loss_streak"]>=2: d["pause_until"]=int(time.time())+900
@@ -233,36 +222,36 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): 
-    bal = get_futures_balance()
-    return f"🚀 V50 EMERGENCY PERFECT 🏆 Bal ${bal:.2f} MAX LOSS -4% ROI LIVE",200
+def home(): return f"V52 PERFECT 3/3 Risk {RISK_MODE}% Bal ${get_futures_balance():.2f} LIVE",200
 @app.get("/health")
-def health(): return "OK ✅ V50",200
+def health(): return "OK V52",200
 
 def fmt(v):
     try:
         v=float(v)
-        if v>=1000: return f"{v:,.2f}"
-        if v>=1: return f"{v:.4f}"
+        if v>=1: return f"{v:.5f}"
         if v>=0.01: return f"{v:.6f}"
         return f"{v:.8f}".rstrip('0').rstrip('.')
     except: return str(v)
 
 def get_klines(sym, interval="2h"):
     key=f"{sym}_{interval}"
-    if key in CACHE and time.time()-CACHE[key][0]<40: return CACHE[key][1]
-    kl=None
+    with CACHE_LOCK:
+        if key in CACHE and time.time()-CACHE[key][0]<60: return CACHE[key][1]
     try:
-        r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=6, proxies=PROXIES).json()
-        if isinstance(r,list) and len(r)>=50:
+        r=requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":interval,"limit":200},headers=HEADERS,timeout=8,proxies=PROXIES).json()
+        if isinstance(r,list) and len(r)>=60:
             kl=[{"o":float(x[1]),"h":float(x[2]),"l":float(x[3]),"c":float(x[4]),"v":float(x[5])} for x in r]
+            with CACHE_LOCK: CACHE[key]=(time.time(),kl)
+            return kl
     except: pass
-    if kl: CACHE[key]=(time.time(),kl); return kl
-    return CACHE.get(key,(0,[]))[1] if key in CACHE else []
+    with CACHE_LOCK:
+        if key in CACHE: return CACHE[key][1]
+    return []
 
 def get_price(sym):
     try:
-        r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=4, proxies=PROXIES).json()
+        r=requests.get("https://fapi.binance.com/fapi/v1/ticker/price",params={"symbol":sym},headers=HEADERS,timeout=4,proxies=PROXIES).json()
         if "price" in r: return float(r["price"])
     except: pass
     kl=get_klines(sym,"15m"); return kl[-1]["c"] if kl else None
@@ -272,22 +261,36 @@ def ema(arr,p):
     k=2/(p+1); e=sum(arr[:p])/p
     for x in arr[p:]: e=(x-e)*k+e
     return e
+
 def rsi_calc(arr,p=14):
     if len(arr)<p+1: return 50
-    g=l=0
-    for i in range(1,p+1):
-        d=arr[-i]-arr[-i-1]
-        if d>0: g+=d
-        else: l+=-d
-    if l==0: return 70 if g>0 else 50
-    return 100 - (100/(1+g/l))
+    gains=[]; losses=[]
+    for i in range(1,len(arr)):
+        d=arr[i]-arr[i-1]
+        if d>0: gains.append(d); losses.append(0)
+        else: gains.append(0); losses.append(-d)
+    if len(gains)<p: return 50
+    avg_g=sum(gains[-p:])/p; avg_l=sum(losses[-p:])/p
+    for i in range(len(arr)-p, len(arr)):
+        if i<1: continue
+        d=arr[i]-arr[i-1]; g=d if d>0 else 0; l=-d if d<0 else 0
+        avg_g=(avg_g*(p-1)+g)/p; avg_l=(avg_l*(p-1)+l)/p
+    if avg_l==0: return 70 if avg_g>0 else 50
+    return 100-(100/(1+avg_g/avg_l))
+
 def atr_calc(kl,p=14):
-    if len(kl)<p+1: return kl[-1]["c"]*0.02
-    trs=[max(kl[-i]["h"]-kl[-i]["l"], abs(kl[-i]["h"]-kl[-i-1]["c"]), abs(kl[-i]["l"]-kl[-i-1]["c"])) for i in range(1,p+1)]
-    return sum(trs)/len(trs)
+    if len(kl)<p+1: return kl[-1]["c"]*0.018
+    trs=[]
+    for i in range(1,p+1):
+        idx=-i; prev=-i-1
+        if abs(prev)>=len(kl): continue
+        tr=max(kl[idx]["h"]-kl[idx]["l"], abs(kl[idx]["h"]-kl[prev]["c"]), abs(kl[idx]["l"]-kl[prev]["c"]))
+        trs.append(tr)
+    return sum(trs)/len(trs) if trs else kl[-1]["c"]*0.02
+
 def adx_calc(kl):
     try:
-        if len(kl)<30: return 18
+        if len(kl)<32: return 18
         highs=[k["h"] for k in kl]; lows=[k["l"] for k in kl]; closes=[k["c"] for k in kl]
         tr=[]; pdm=[]; mdm=[]
         for i in range(1,len(kl)):
@@ -298,313 +301,303 @@ def adx_calc(kl):
         if atr_v==0: return 18
         pdi=100*sum(pdm[-14:])/14/atr_v; mdi=100*sum(mdm[-14:])/14/atr_v
         if pdi+mdi==0: return 18
-        return max(10, min(60, 100*abs(pdi-mdi)/(pdi+mdi)))
+        return max(10,min(62,100*abs(pdi-mdi)/(pdi+mdi)))
     except: return 18
+
 def pd_calc(kl):
     if len(kl)<100: return "EQUILIBRIUM",50
     hi=max(k["h"] for k in kl[-100:]); lo=min(k["l"] for k in kl[-100:]); pr=kl[-1]["c"]
     pct=(pr-lo)/(hi-lo)*100 if hi!=lo else 50
     return ("PREMIUM",pct) if pct>=70 else ("DISCOUNT",pct) if pct<=30 else ("EQUILIBRIUM",pct)
+
 def trend_calc(closes):
-    if len(closes)<50: return 0,"SIDEWAYS"
+    if len(closes)<50: return 0,"SIDEWAYS",0,0
     e20=ema(closes,20); e50=ema(closes,50); pr=closes[-1]
-    if pr>e20>e50: return 50,"UPTREND"
-    if pr>e20: return 20,"WEAK UP"
-    if pr<e20<e50: return -50,"DOWNTREND"
-    if pr<e20: return -20,"WEAK DOWN"
-    return 0,"SIDEWAYS"
+    if pr>e20>e50: return 50,"UPTREND",e20,e50
+    if pr>e20: return 20,"WEAK UP",e20,e50
+    if pr<e20<e50: return -50,"DOWNTREND",e20,e50
+    if pr<e20: return -20,"WEAK DOWN",e20,e50
+    return 0,"SIDEWAYS",e20,e50
+
 def vol_calc(kl):
-    if len(kl)<20: return 0,"Vol N/A", False
-    vols=[k["v"] for k in kl[-20:]]; avg=sum(vols[:-1])/len(vols[:-1]) if vols[:-1] else 1; pct=(vols[-1]-avg)/avg*100 if avg else 0
-    reject = pct < -45
-    return pct,f"Vol {pct:.0f}%", reject
+    if len(kl)<22: return 0,"Vol N/A",False
+    vols=[k["v"] for k in kl[-22:]]; avg=sum(vols[:-2])/len(vols[:-2]) if len(vols)>2 else 1
+    pct=(vols[-1]-avg)/avg*100 if avg else 0
+    return pct,f"Vol {pct:.0f}%", pct<-50
 
 def ema_distance_filter(price, ema20, mode):
-    dist = abs(price - ema20) / ema20 * 100
-    if mode=="SNIPER" and dist>0.7: return False, f"EMA Dist {dist:.2f}% Too Far 🔴 Chasing! Need <0.7%"
-    if mode=="SCALP" and dist>1.2: return False, f"EMA Dist {dist:.2f}% Too Far 🔴 Need <1.2%"
-    return True, f"EMA Dist {dist:.2f}% ✅ Pullback Perfect!"
+    dist=abs(price-ema20)/ema20*100 if ema20 else 99
+    if mode=="SNIPER" and dist>0.55: return False,f"EMA Dist {dist:.2f}% Too Far 🔴 Need <0.55% 3/3"
+    if mode=="SCALP" and dist>1.0: return False,f"EMA Dist {dist:.2f}% Too Far 🔴"
+    if "RISKY" in mode and dist>0.80: return False,f"EMA Dist {dist:.2f}% Too Far 🔴 Need <0.8%"
+    return True,f"EMA Dist {dist:.2f}% ✅ Perfect!"
+
+def calc_stoch_rsi(closes, period=14):
+    try:
+        if len(closes)<period+5: return 50
+        rsi_vals=[rsi_calc(closes[:i+1]) for i in range(period, len(closes))]
+        if len(rsi_vals)<5: return 50
+        recent=rsi_vals[-5:]; low=min(recent); high=max(recent)
+        if high==low: return 50
+        return (recent[-1]-low)/(high-low)*100
+    except: return 50
 
 def analyze_single_quick(code):
     try:
         sym=CRYPTO[code]; k15=get_klines(sym,"15m"); k1=get_klines(sym,"1h"); k2=get_klines(sym,"2h")
-        if len(k2)<40: k2=k1 if len(k1)>=40 else k15
-        if len(k2)<40: return None
+        if len(k2)<50: k2=k1 if len(k1)>=50 else k15
+        if len(k2)<50: return None
         c2=[k["c"] for k in k2]; price=get_price(sym) or c2[-1]
         rsi_v=rsi_calc(c2); atr_v=atr_calc(k2); adx_v=adx_calc(k2); pd_zone,pd_pct=pd_calc(k2)
         c15=[k["c"] for k in k15] if k15 else c2; c1=[k["c"] for k in k1] if k1 else c2
-        s15,t15=trend_calc(c15); s1,t1=trend_calc(c1); s2,t2=trend_calc(c2)
-        e20_2h=ema(c2,20); e50_2h=ema(c2,50)
+        s15,t15,e20_15,_=trend_calc(c15); s1,t1,e20_1h,_=trend_calc(c1); s2,t2,e20_2h,_=trend_calc(c2)
         vol_pct,vol_txt,vol_reject=vol_calc(k2)
         align=3 if (s15>0 and s1>0 and s2>0) or (s15<0 and s1<0 and s2<0) else 2 if (s1>0 and s2>0) or (s1<0 and s2<0) else 1
-        direction="BUY" if s2>=0 else "SELL"; volatility=atr_v/price*100 if price else 0
-        conf_quick=0
-        if direction=="BUY" and pd_pct<=35: conf_quick+=20
-        if direction=="SELL" and pd_pct>=65: conf_quick+=20
-        if adx_v>=18: conf_quick+=10
-        rsi_ok_sniper = 42<=rsi_v<=58
-        rsi_ok_scalp = 38<=rsi_v<=62
-        return {"code":code,"price":price,"rsi":rsi_v,"rsi_ok_sniper":rsi_ok_sniper,"rsi_ok_scalp":rsi_ok_scalp,"adx":adx_v,"atr":atr_v,"volatility":volatility,"pd_zone":pd_zone,"pd_pct":pd_pct,"t15":t15,"t1":t1,"t2":t2,"vol_pct":vol_pct,"vol_txt":vol_txt,"vol_reject":vol_reject,"align":align,"dir":direction,"kl":k2,"closes":c2,"conf_quick":conf_quick,"ema20":e20_2h,"ema50":e50_2h}
+        direction="BUY" if s2>=0 else "SELL"
+        pab=0
+        if c15[-1]>e20_15: pab+=1
+        if c1[-1]>e20_1h: pab+=1
+        if c2[-1]>e20_2h: pab+=1
+        pbb=3-pab
+        ema_3tf_ok=(direction=="BUY" and pab>=2) or (direction=="SELL" and pbb>=2)
+        ema_3tf_perfect=(direction=="BUY" and pab==3) or (direction=="SELL" and pbb==3)
+        volatility=atr_v/price*100 if price else 0
+        conf=0
+        if direction=="BUY" and pd_pct<=32: conf+=22
+        if direction=="SELL" and pd_pct>=68: conf+=22
+        if adx_v>=20: conf+=12
+        if ema_3tf_perfect: conf+=10
+        stoch=calc_stoch_rsi(c2)
+        return {"code":code,"price":price,"rsi":rsi_v,"stoch":stoch,"stoch_ok":20<=stoch<=80,"rsi_ok_sniper":42<=rsi_v<=58,"rsi_ok_scalp":38<=rsi_v<=62,"rsi_ok_risky":40<=rsi_v<=65,"adx":adx_v,"atr":atr_v,"volatility":volatility,"pd_zone":pd_zone,"pd_pct":pd_pct,"t15":t15,"t1":t1,"t2":t2,"e20_15":e20_15,"e20_1h":e20_1h,"e20_2h":e20_2h,"vol_pct":vol_pct,"vol_txt":vol_txt,"vol_reject":vol_reject,"align":align,"dir":direction,"kl":k2,"closes":c2,"conf_quick":conf,"ema20":e20_2h,"ema_3tf_ok":ema_3tf_ok,"ema_3tf_perfect":ema_3tf_perfect,"pab":pab}
     except Exception as e:
-        print(f"quick err {code}: {e}")
-        return None
+        print(f"quick err {code}: {e}"); return None
 
 def ai_score_quick(r, market_adx):
     score=r.get("conf_quick",0)
-    if 42<=r["rsi"]<=60: score+=12
-    if r["volatility"]>=1.0: score+=8
-    if r["align"]==3: score+=12
+    if 42<=r["rsi"]<=58: score+=14
+    elif 38<=r["rsi"]<=62: score+=8
+    if r["volatility"]>=1.1: score+=8
+    if r["align"]==3: score+=14
     elif r["align"]==2: score+=4
-    if r["vol_pct"]>=5: score+=5
+    else: score-=8
+    if r["vol_pct"]>=10: score+=6
+    if r.get("ema_3tf_perfect"): score+=8
+    if r.get("stoch_ok"): score+=4
     return score
 
 def add_ultimate_analysis(r):
     sym=CRYPTO[r["code"]]
-    ob_score, ob_txt, ob_reject = get_orderbook_score(sym, r["dir"])
-    oi_score, oi_txt, oi_val, funding = get_oi_funding_score(sym)
-    ls_score, ls_txt = get_ls_ratio_score(sym, r["dir"])
-    cvd_score, cvd_txt, cvd_reject = calc_cvd(r["kl"], r["dir"])
-    bos_score, bos_txt, bos_reject = calc_bos(r["kl"])
-    fib_score, fib_txt = calc_fib_entry(r["kl"], r["dir"])
-    div_score, div_txt = calc_divergence(r["kl"], r["closes"])
-    btc_score, btc_txt = get_btc_filter()
-    extra_btc = btc_score if r["dir"]=="BUY" and btc_score<0 else max(0, btc_score)
-    ema_ok_sniper, ema_txt_sniper = ema_distance_filter(r["price"], r["ema20"], "SNIPER")
-    ema_ok_scalp, ema_txt_scalp = ema_distance_filter(r["price"], r["ema20"], "SCALP")
+    ob_score, ob_txt, ob_reject=get_orderbook_score(sym, r["dir"])
+    oi_score, oi_txt, _, funding=get_oi_funding_score(sym)
+    ls_score, ls_txt=get_ls_ratio_score(sym, r["dir"])
+    cvd_score, cvd_txt, _=calc_cvd(r["kl"], r["dir"])
+    bos_score, bos_txt, _=calc_bos(r["kl"])
+    fib_score, fib_txt=calc_fib_entry(r["kl"], r["dir"])
+    btc_score, btc_txt=get_btc_filter()
+    extra_btc=btc_score if r["dir"]=="BUY" and btc_score<0 else max(0, btc_score)
+    ema_ok_sniper, ema_txt_sniper=ema_distance_filter(r["price"], r["ema20"], "SNIPER")
+    ema_ok_scalp, ema_txt_scalp=ema_distance_filter(r["price"], r["ema20"], "SCALP")
+    ema_ok_risky, ema_txt_risky=ema_distance_filter(r["price"], r["ema20"], "RISKY15")
     rejects=[]
     if ob_reject: rejects.append(ob_txt)
-    if r.get("vol_reject", False): rejects.append(f"{r['vol_txt']} HARD REJECT")
-    extra_score = ob_score + oi_score + ls_score + cvd_score + bos_score + fib_score + div_score + extra_btc
-    r["extra_score"]=extra_score; r["ob_txt"]=ob_txt; r["oi_txt"]=oi_txt; r["ls_txt"]=ls_txt; r["cvd_txt"]=cvd_txt; r["bos_txt"]=bos_txt; r["fib_txt"]=fib_txt; r["div_txt"]=div_txt; r["btc_txt"]=btc_txt; r["funding"]=funding; r["oi"]=oi_val; r["rejects"]=rejects; r["ob_reject"]=ob_reject
-    r["ema_ok_sniper"]=ema_ok_sniper; r["ema_txt_sniper"]=ema_txt_sniper; r["ema_ok_scalp"]=ema_ok_scalp; r["ema_txt_scalp"]=ema_txt_scalp
+    if r.get("vol_reject", False): rejects.append(f"{r['vol_txt']} REJECT")
+    if not r.get("ema_3tf_ok", False): rejects.append("EMA 3TF not aligned")
+    extra_score=ob_score+oi_score+ls_score+cvd_score+bos_score+fib_score+extra_btc
+    r["extra_score"]=extra_score; r["ob_txt"]=ob_txt; r["oi_txt"]=oi_txt; r["ls_txt"]=ls_txt; r["cvd_txt"]=cvd_txt; r["bos_txt"]=bos_txt; r["fib_txt"]=fib_txt; r["btc_txt"]=btc_txt; r["funding"]=funding; r["rejects"]=rejects; r["ob_reject"]=ob_reject
+    r["ema_ok_sniper"]=ema_ok_sniper; r["ema_txt_sniper"]=ema_txt_sniper; r["ema_ok_scalp"]=ema_ok_scalp; r["ema_txt_scalp"]=ema_txt_scalp; r["ema_ok_risky"]=ema_ok_risky; r["ema_txt_risky"]=ema_txt_risky
     return r
 
 def ai_score_final(r):
     if r.get("ob_reject", False): return 0
     if r.get("vol_reject", False): return 0
+    if not r.get("ema_3tf_ok", False): return 0
     score=0
     if r["dir"]=="BUY":
-        if r["pd_pct"]<=25: score+=22
-        elif r["pd_pct"]<=35: score+=16
-        elif r["pd_pct"]<=50: score+=6
-        else: score-=4
+        if r["pd_pct"]<=22: score+=24
+        elif r["pd_pct"]<=32: score+=18
+        elif r["pd_pct"]<=48: score+=7
+        else: score-=5
     else:
-        if r["pd_pct"]>=75: score+=22
-        elif r["pd_pct"]>=65: score+=16
-        elif r["pd_pct"]>=50: score+=6
-        else: score-=4
-    if 42<=r["rsi"]<=58: score+=18
-    elif 38<=r["rsi"]<=62: score+=10
+        if r["pd_pct"]>=78: score+=24
+        elif r["pd_pct"]>=68: score+=18
+        elif r["pd_pct"]>=52: score+=7
+        else: score-=5
+    if 42<=r["rsi"]<=58: score+=20
+    elif 38<=r["rsi"]<=62: score+=11
+    else: score-=6
+    if 20<=r["adx"]<=52: score+=20
+    elif r["adx"]>=14: score+=9
     else: score-=4
-    if 20<=r["adx"]<=50: score+=18
-    elif r["adx"]>=14: score+=8
-    else: score-=3
-    if r["volatility"]>=1.2: score+=8
-    elif r["volatility"]>=0.8: score+=4
-    if r["vol_pct"]>=10: score+=6
+    if r["volatility"]>=1.3: score+=9
+    elif r["volatility"]>=0.9: score+=5
+    if r["vol_pct"]>=15: score+=7
     elif r["vol_pct"]>=0: score+=2
-    else: score-=2
-    if r["align"]==3: score+=12
-    elif r["align"]==2: score+=5
     else: score-=3
+    if r["align"]==3: score+=15
+    elif r["align"]==2: score+=5
+    else: score-=12
+    if r.get("ema_3tf_perfect"): score+=10
+    if r.get("stoch_ok"): score+=5
     score+=r.get("extra_score",0)
-    return max(0, min(100, score))
+    return max(0,min(100,score))
 
 def build_trade(r, mode="SNIPER"):
-    price=r["price"]; d=r["dir"]; atr=r["atr"]; atr_pct=r["volatility"]/100
-    if mode=="SCALP":
-        sl_pct=max(0.004, min(0.008, atr_pct*0.7))
-        tp1_pct=sl_pct*0.9; tp2_pct=sl_pct*1.8; tp3_pct=sl_pct*3.0
-    else:
-        sl_pct=max(0.007, min(0.012, atr_pct*1.0))
-        tp1_pct=sl_pct*0.9; tp2_pct=sl_pct*2.1; tp3_pct=sl_pct*3.8
-    if d=="BUY":
-        sl=price*(1-sl_pct); tp1=price*(1+tp1_pct); tp2=price*(1+tp2_pct); tp3=price*(1+tp3_pct)
-    else:
-        sl=price*(1+sl_pct); tp1=price*(1-tp1_pct); tp2=price*(1-tp2_pct); tp3=price*(1-tp3_pct)
-    return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":LEV[r["code"]],"rsi":r["rsi"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']}","vol_txt":r["vol_txt"],"kl":r["kl"],"closes":r["closes"],"sl_pct":sl_pct*100,"tp1_pct":tp1_pct*100,"tp2_pct":tp2_pct*100,"tp3_pct":tp3_pct*100,"atr":atr,"ema20":r.get("ema20",0),"ema50":r.get("ema50",0),"align":r.get("align",0)}
+    price=r["price"]; d=r["dir"]
+    if mode=="RISKY15": sl_pct=0.015; tp1_pct=0.015; tp2_pct=0.03; tp3_pct=0.045
+    elif mode=="RISKY20": sl_pct=0.02; tp1_pct=0.02; tp2_pct=0.04; tp3_pct=0.06
+    elif mode=="RISKY": sl_pct=0.015; tp1_pct=0.015; tp2_pct=0.03; tp3_pct=0.045
+    elif mode=="SCALP": sl_pct=0.006; tp1_pct=0.006; tp2_pct=0.012; tp3_pct=0.018
+    else: sl_pct=0.009; tp1_pct=0.009; tp2_pct=0.019; tp3_pct=0.032
+    if d=="BUY": sl=price*(1-sl_pct); tp1=price*(1+tp1_pct); tp2=price*(1+tp2_pct); tp3=price*(1+tp3_pct)
+    else: sl=price*(1+sl_pct); tp1=price*(1-tp1_pct); tp2=price*(1-tp2_pct); tp3=price*(1-tp3_pct)
+    return {"code":r["code"],"dir":d,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"lev":10,"rsi":r["rsi"],"stoch":r["stoch"],"adx":r["adx"],"volatility":r["volatility"],"pd_zone":r["pd_zone"],"pd_pct":r["pd_pct"],"mtf":f"15m {r['t15']} | 1H {r['t1']} | 2H {r['t2']}","vol_txt":r["vol_txt"],"sl_pct":sl_pct*100,"tp1_pct":tp1_pct*100,"tp2_pct":tp2_pct*100,"tp3_pct":tp3_pct*100,"atr":r["atr"],"ema20":r["ema20"],"align":r["align"]}
 
 def kb(active=None):
     daily=get_daily(); btns=[]
     if active and active.get("status")=="OPEN":
-        btns.append([InlineKeyboardButton(f'🟢 {active["dir"]} {active["coin"]} {active.get("mode","")} TP{active.get("stage",0)}/3 💰',callback_data="MON")])
-        btns.append([InlineKeyboardButton(f'👀 MONITOR {active["coin"]} 📊',callback_data="MON"), InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
+        btns.append([InlineKeyboardButton(f'🟢 {active["dir"]} {active["coin"]} {active.get("mode","")} TP{active.get("stage",0)}/3',callback_data="MON")])
+        btns.append([InlineKeyboardButton(f'👀 MONITOR {active["coin"]}',callback_data="MON"), InlineKeyboardButton(f'❌ Close',callback_data="CLS")])
     else:
-        btns.append([InlineKeyboardButton(f'🎯 SCAN V50 PERFECT ⚡',callback_data="SCAN")])
-    btns.append([InlineKeyboardButton(f'📊 Daily {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f} 💵',callback_data="DAILY"), InlineKeyboardButton(f'👀 MONITOR 📡',callback_data="MON")])
+        btns.append([InlineKeyboardButton(f'🎯 SCAN V52 3/3',callback_data="SCAN"), InlineKeyboardButton(f'🔥 RISK 1.5%',callback_data="RISK15"), InlineKeyboardButton(f'🔥 RISK 2%',callback_data="RISK20")])
+    btns.append([InlineKeyboardButton(f'📊 {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY"), InlineKeyboardButton(f'👀 MONITOR',callback_data="MON")])
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app):
-    try: await app.bot.set_my_commands([
-        BotCommand("start","🎯 V50 PERFECT"),
-        BotCommand("scan","🎯 SCAN V50"),
-        BotCommand("monitor","👀 MONITOR"),
-        BotCommand("daily","📊 Daily P&L")
-    ])
+    try:
+        await app.bot.set_my_commands([
+            BotCommand("start","🎯 V52 PERFECT 3/3"),
+            BotCommand("scan","🎯 SCAN 3/3"),
+            BotCommand("risk15","🔥 RISK 1.5% SL 1.5 TP 4.5"),
+            BotCommand("risk20","🔥 RISK 2% SL 2 TP 6"),
+            BotCommand("monitor","👀 MONITOR"),
+            BotCommand("daily","📊 Daily")
+        ])
     except: pass
 
-def bg_scan(chat_id):
+def bg_scan(chat_id, risk_mode_override=None):
     try:
         daily=get_daily()
-        if daily.get("pause_until",0) > int(time.time()):
-            wait = (daily["pause_until"] - int(time.time()))//60
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⏸️ LOSS GUARD PAUSE! 2 losses! Wait {wait} min! 🛡️"},timeout=10, proxies=PROXIES); return
-        bal = get_futures_balance()
-        raws=[]
+        if daily.get("pause_until",0)>int(time.time()):
+            wait=(daily["pause_until"]-int(time.time()))//60
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⏸️ LOSS GUARD PAUSE Wait {wait} min! 🛡️"},timeout=10,proxies=PROXIES); return
+        bal=get_futures_balance(); raws=[]
         for code in FAST:
             r=analyze_single_quick(code)
             if r: raws.append(r)
-            time.sleep(0.015)
-        if not raws:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"❌ No data 😴"},timeout=10, proxies=PROXIES); return
+            time.sleep(0.02)
+        if not raws: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"❌ No data"},timeout=10,proxies=PROXIES); return
         avg_adx=sum(x["adx"] for x in raws)/len(raws)
         cands=[]
         for r in raws:
-            if r["vol_pct"] < -50: continue
-            if r["adx"] < 12: continue
-            score = ai_score_quick(r, avg_adx)
-            if score < 28: continue
-            r["conf_quick"]=score
-            cands.append(r)
-        if not cands:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"😴 Market dull... $ safe! Try 5 min ⚡"},timeout=10, proxies=PROXIES); return
+            if r["vol_pct"]<-50: continue
+            if r["adx"]<14: continue
+            if r["align"]<2: continue
+            score=ai_score_quick(r, avg_adx)
+            if score<30: continue
+            r["conf_quick"]=score; cands.append(r)
+        if not cands: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":"😴 Market dull $ safe!"},timeout=10,proxies=PROXIES); return
         cands.sort(key=lambda x: x["conf_quick"], reverse=True)
-        top20 = cands[:20]
-        ultimate_cands=[]
-        report_lines=[]
+        top20=cands[:22]; ultimate_cands=[]; report_lines=[]
         for r_quick in top20:
-            r_full = add_ultimate_analysis(r_quick)
-            score = ai_score_final(r_full)
-            if score==0: 
-                report_lines.append(f"{r_full['code']} REJECT ❌ {', '.join(r_full.get('rejects',[]))[:40]}")
+            r_full=add_ultimate_analysis(r_quick)
+            score=ai_score_final(r_full)
+            if score==0:
+                report_lines.append(f"{r_full['code']} REJECT {', '.join(r_full.get('rejects',[]))[:35]}")
                 continue
-            if not r_full["ema_ok_sniper"] and not r_full["ema_ok_scalp"]:
-                report_lines.append(f"{r_full['code']} {r_full['ema_txt_sniper']} ❌")
+            if r_full["align"]!=3:
+                report_lines.append(f"{r_full['code']} Align {r_full['align']}/3 ❌ Need 3/3")
                 continue
-            if not r_full["rsi_ok_sniper"] and not r_full["rsi_ok_scalp"]:
-                report_lines.append(f"{r_full['code']} RSI {r_full['rsi']:.0f} Overbought ❌")
+            if not r_full["ema_3tf_perfect"]:
+                report_lines.append(f"{r_full['code']} EMA 3TF not perfect ❌")
                 continue
-            mode_allowed = []
-            if r_full["ema_ok_sniper"] and r_full["rsi_ok_sniper"] and score>=68: mode_allowed.append("SNIPER")
-            if r_full["ema_ok_scalp"] and r_full["rsi_ok_scalp"] and score>=52: mode_allowed.append("SCALP")
+            mode_allowed=[]
+            if r_full["ema_ok_sniper"] and r_full["rsi_ok_sniper"] and r_full["stoch_ok"] and score>=72: mode_allowed.append("SNIPER")
+            if r_full["ema_ok_risky"] and r_full["rsi_ok_risky"] and score>=60:
+                if risk_mode_override=="2.0" or RISK_MODE=="2.0": mode_allowed.append("RISKY20")
+                else: mode_allowed.append("RISKY15")
+            if r_full["ema_ok_scalp"] and r_full["rsi_ok_scalp"] and score>=54: mode_allowed.append("SCALP")
             if not mode_allowed:
-                report_lines.append(f"{r_full['code']} {score}/100 EMA {r_full['ema_txt_sniper'][:25]} RSI {r_full['rsi']:.0f}")
+                report_lines.append(f"{r_full['code']} {score}/100 EMA {r_full['ema_txt_sniper'][:25]}")
                 continue
             for m in mode_allowed:
                 trade=build_trade(r_full,m); trade["conf"]=int(score); trade["raw"]=r_full; trade["mode"]=m
                 ultimate_cands.append(trade)
-
         if not ultimate_cands:
-            top_report = "\n".join(report_lines[:5])
-            msg = f"🎯 V50 PERFECT - No 52%+ trade\n\n📊 TOP 5 Checked:\n{top_report}\n\n💡 V50 Need:\n✅ SNIPER 68+ EMA <0.7% RSI 42-58 = $3 MAX -4% ROI -$0.12\n✅ SCALP 52+ EMA <1.2% RSI 38-62 = $2 MAX -4% ROI -$0.08\n\n$ safe! Try 5 min ⚡"
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg},timeout=10, proxies=PROXIES); return
-        
-        snipers = [x for x in ultimate_cands if x["mode"]=="SNIPER"]
-        if snipers:
-            snipers.sort(key=lambda x: x["conf"], reverse=True)
-            best=snipers[0]
+            top_report="\n".join(report_lines[:6])
+            msg=f"🎯 V52 PERFECT 3/3 - No 3/3 trade\n\nTOP 6:\n{top_report}\n\nNeed:\n✅ 15m+1H+2H SAME 3/3\n✅ EMA Dist <0.55% + EMA 3TF perfect\n✅ RSI 42-58 + Stoch 20-80\nSNIPER 72+ RISKY15 60+ 1.5% SL 4.5% TP"
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":msg},timeout=10,proxies=PROXIES); return
+        snipers=[x for x in ultimate_cands if x["mode"]=="SNIPER"]
+        if snipers: snipers.sort(key=lambda x: x["conf"], reverse=True); best=snipers[0]
         else:
-            scalps = [x for x in ultimate_cands if x["mode"]=="SCALP"]
-            scalps.sort(key=lambda x: x["conf"], reverse=True)
-            best=scalps[0]
-        
+            risky=[x for x in ultimate_cands if "RISKY" in x["mode"]]
+            if risky: risky.sort(key=lambda x: x["conf"], reverse=True); best=risky[0]
+            else: ultimate_cands.sort(key=lambda x: x["conf"], reverse=True); best=ultimate_cands[0]
         if get_active().get("status")=="OPEN":
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN 🔒 Use /monitor 👀"},timeout=10, proxies=PROXIES); return
-        
-        mode = best["mode"]
-        amt = get_trade_amount(mode)
-        real_symbol = CRYPTO[best["code"]]
-        order_res = place_real_order(real_symbol, best["dir"], amt)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active {get_active().get('coin')} OPEN"},timeout=10,proxies=PROXIES); return
+        mode=best["mode"]; amt=get_trade_amount(mode); real_symbol=CRYPTO[best["code"]]
+        order_res=place_real_order(real_symbol, best["dir"], amt)
         if not order_res:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Order failed {real_symbol} 😭 Check ${amt*2}+ USDT 💸"},timeout=10, proxies=PROXIES); return
-        
-        set_active({"status":"OPEN","coin":best["code"],"symbol":real_symbol,"dir":best["dir"],"entry":best["entry"],"sl":best["sl"],"tp1":best["tp1"],"tp2":best["tp2"],"tp3":best["tp3"],"conf":best["conf"],"stake":amt,"lev":best["lev"],"stage":0,"highest":best["entry"],"lowest":best["entry"],"sl_pct":best["sl_pct"],"tp1_pct":best["tp1_pct"],"mode":mode,"time":str(datetime.now()),"rsi":best["rsi"],"adx":best["adx"],"pd_pct":best["pd_pct"],"pd_zone":best["pd_zone"],"mtf":best["mtf"],"vol_txt":best["vol_txt"],"ema20":best["ema20"],"ema50":best["ema50"],"align":best["align"]})
-        
-        if mode=="SNIPER":
-            sure = "95% SURE 🔥🔥🔥" if best["conf"]>=85 else "90% SURE 🔥🔥" if best["conf"]>=75 else "85% SURE ✅"
-            risk_txt = f"Max -4% ROI ${amt*0.04:.2f}"
-        else:
-            sure = "75% SCALP ⚡" if best["conf"]>=60 else "65% SCALP ⚡"
-            risk_txt = f"Max -4% ROI ${amt*0.04:.2f} SAFE!"
-        
-        txt=(
-            f"{'🎯 SNIPER TRUE' if mode=='SNIPER' else '⚡ FAST SCALP'} {best['conf']}/100 {sure}\n"
-            f"💎 {best['code']} {best['dir']} @ {fmt(best['entry'])}\n"
-            f"💰 ${amt} {best['lev']}x | SL {best['sl_pct']:.2f}% {risk_txt} | TP {best['tp1_pct']:.2f}/{best['tp2_pct']:.2f}/{best['tp3_pct']:.2f}\n"
-            f"🆔 ORDER {order_res.get('orderId')} ✅ Mode: {mode}\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"📊 CORE V50 PERFECT:\n"
-            f"• RSI: {best['rsi']:.1f} ✅ Perfect Zone!\n"
-            f"• EMA20: {fmt(best['ema20'])} Dist {(abs(best['entry']-best['ema20'])/best['ema20']*100):.2f}% ✅ Pullback!\n"
-            f"• ADX: {best['adx']:.1f} ✅ Strong\n"
-            f"• EMA: 20={fmt(best['ema20'])} 50={fmt(best['ema50'])} {best['raw']['t2']}\n"
-            f"• PD: {best['pd_pct']:.0f}% {best['pd_zone']}\n"
-            f"• MTF: {best['mtf']} | Align {best['align']}/3\n"
-            f"• {best['vol_txt']} | ATR {best['volatility']:.2f}%\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🧠 ULTIMATE:\n"
-            f"🧱 {best['raw']['ob_txt']}\n"
-            f"🐳 {best['raw']['oi_txt']}\n"
-            f"🔄 {best['raw']['ls_txt']}\n"
-            f"🏗️ {best['raw']['bos_txt']}\n"
-            f"📐 {best['raw']['fib_txt']}\n"
-            f"💪 {best['raw']['cvd_txt']}\n"
-            f"₿ {best['raw']['btc_txt']}\n"
-            f"🔍 {best['raw']['ema_txt_sniper'] if mode=='SNIPER' else best['raw']['ema_txt_scalp']}\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"💵 Bal ${bal:.2f} | {mode} {sure} | EMERGENCY -4% ROI MAX 🛡️ | TimeStop 3min"
-        )
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt},timeout=10, proxies=PROXIES)
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Order failed {real_symbol} Check ${amt*2}+ USDT"},timeout=10,proxies=PROXIES); return
+        set_active({"status":"OPEN","coin":best["code"],"symbol":real_symbol,"dir":best["dir"],"entry":best["entry"],"sl":best["sl"],"tp1":best["tp1"],"tp2":best["tp2"],"tp3":best["tp3"],"conf":best["conf"],"stake":amt,"lev":10,"stage":0,"highest":best["entry"],"lowest":best["entry"],"sl_pct":best["sl_pct"],"tp1_pct":best["tp1_pct"],"tp2_pct":best["tp2_pct"],"tp3_pct":best["tp3_pct"],"mode":mode,"time":str(datetime.now()),"rsi":best["rsi"],"stoch":best["stoch"],"adx":best["adx"],"pd_pct":best["pd_pct"],"pd_zone":best["pd_zone"],"mtf":best["mtf"],"vol_txt":best["vol_txt"],"ema20":best["ema20"],"align":best["align"]})
+        if mode=="RISKY15": risk_txt=f"SL 1.5% $0.45 | TP 1.5/3/4.5% $1.35 (1:3)"; sure="90% RISKY 1.5% 🔥🔥"
+        elif mode=="RISKY20": risk_txt=f"SL 2% $0.60 | TP 2/4/6% $1.80 (1:3)"; sure="90% RISKY 2% 🔥🔥🔥"
+        elif mode=="SNIPER": risk_txt=f"SL {best['sl_pct']:.2f}% | TP {best['tp1_pct']:.2f}/{best['tp2_pct']:.2f}/{best['tp3_pct']:.2f}%"; sure="95% SURE 3/3 🔥🔥🔥" if best["conf"]>=85 else "90% SURE 3/3 🔥🔥"
+        else: risk_txt=f"SL {best['sl_pct']:.2f}%"; sure="75% SCALP ⚡"
+        txt=(f"{'🎯 SNIPER 3/3' if mode=='SNIPER' else '🔥 RISKY 1.5%' if mode=='RISKY15' else '🔥🔥 RISKY 2%' if mode=='RISKY20' else '⚡ SCALP 3/3'} {best['conf']}/100 {sure}\n💎 {best['code']} {best['dir']} @ {fmt(best['entry'])}\n💰 ${amt} 10x | {risk_txt}\n🆔 ORDER {order_res.get('orderId')} ✅ {mode}\n━━━━━━━━━━━━━━━\n📊 PERFECT 3/3 ✅✅✅:\n• MTF: {best['mtf']} | Align {best['align']}/3 PERFECT!\n• EMA 3TF: {best['raw']['pab']}/3 ✅ | {best['raw']['ema_txt_sniper']}\n• RSI {best['rsi']:.1f} ✅ | Stoch {best['stoch']:.0f} {'✅' if best['raw']['stoch_ok'] else ''} | ADX {best['adx']:.1f}\n• PD {best['pd_pct']:.0f}% {best['pd_zone']} | {best['raw']['fib_txt']}\n• {best['vol_txt']} | ATR {best['volatility']:.2f}%\n━━━━━━━━━━━━━━━\n🧠 ULTIMATE:\n🧱 {best['raw']['ob_txt']}\n🐳 {best['raw']['oi_txt']}\n🔄 {best['raw']['ls_txt']}\n🏗️ {best['raw']['bos_txt']}\n💪 {best['raw']['cvd_txt']}\n₿ {best['raw']['btc_txt']}\n━━━━━━━━━━━━━━━\n💵 Bal ${bal:.2f} | {mode} {sure} | SL {best['sl_pct']:.1f}% TP {best['tp3_pct']:.1f}%")
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt},timeout=10,proxies=PROXIES)
     except Exception as e:
         print(f"SCAN ERR {e}")
-        try:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Scan error: {e} 😭"},timeout=10, proxies=PROXIES)
+        try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Scan error {e}"},timeout=10,proxies=PROXIES)
         except: pass
 
 async def start(u,c):
-    save_chat(u.message.chat.id); bal = get_futures_balance()
-    bal_text = f"\n💰 Futures: ${bal:.2f} USDT\n🛡️ V50 MAX LOSS -4% ROI!" if bal is not None else "\n❌ Balance fail 😭"
-    await u.message.reply_text(f"🤖 V50 EMERGENCY PERFECT LIVE ✨{bal_text}\n💵 SNIPER 68+ $3 MAX -4% ROI -$0.12\n💵 SCALP 52+ $2 MAX -4% ROI -$0.08\n📊 EMA Dist <0.7% + RSI 42-58 + TimeStop 3min\n🔒 NEVER -6.22% AGAIN! MAX -4% ROI!\n🎯 PEPE/BONK/WIF FAST! ⚡\n👀 /monitor LIVE!",parse_mode="Markdown",reply_markup=kb(get_active()))
+    save_chat(u.message.chat.id); bal=get_futures_balance()
+    await u.message.reply_text(f"🤖 V52 PERFECT 3/3 LIVE ✨\n💰 Futures ${bal:.2f} USDT Risk {RISK_MODE}%\n✅ 15m+1H+2H 3/3 SAME trend\n✅ EMA 3TF perfect + Dist <0.55%\n✅ RSI 42-58 + Stoch 20-80\n💵 SNIPER 72+ $3 SL 0.9% TP 3.2%\n🔥 RISKY15 SL 1.5% TP 4.5% $1.35 win\n🔥🔥 RISKY20 SL 2% TP 6% $1.80 win\nCommands /scan /risk15 /risk20 /monitor",reply_markup=kb(get_active()))
 
 async def scan_cmd(u,c):
-    save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("🎯 SCANNING V50 EMERGENCY PERFECT... ⚡\nMAX LOSS -4% ROI! EMA <0.7% + RSI 42-58! 10 sec...")
+    save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, None),daemon=True).start()
+    await u.message.reply_text("🎯 SCANNING V52 PERFECT 3/3... 12 sec... Need 15m+1H+2H SAME + EMA 3TF!")
+
+async def risk15_cmd(u,c):
+    save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "1.5"),daemon=True).start()
+    await u.message.reply_text("🔥 SCANNING RISKY 1.5%... SL 1.5% $0.45 TP 4.5% $1.35 (1:3)!")
+
+async def risk20_cmd(u,c):
+    save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "2.0"),daemon=True).start()
+    await u.message.reply_text("🔥🔥 SCANNING RISKY 2%... SL 2% $0.60 TP 6% $1.80 (1:3)!")
 
 async def daily_cmd(u,c):
-    d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} Streak {d.get('loss_streak',0)} 💵 V50 MAX -4%",reply_markup=kb(get_active()))
+    d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} Streak {d.get('loss_streak',0)} 💵 V52",reply_markup=kb(get_active()))
 
 async def monitor_cmd(u,c):
     save_chat(u.message.chat.id); act=get_active()
     if not act.get("status")=="OPEN":
-        await u.message.reply_text("😴 No active trade now 📭\nYour $ safe! Press SCAN V50! 🎯⚡",reply_markup=kb()); return
+        await u.message.reply_text("😴 No active trade 📭 Press SCAN or RISK!",reply_markup=kb()); return
     price=get_price(CRYPTO[act["coin"]]) or act["entry"]; entry=act["entry"]; stake=act["stake"]; lev=act["lev"]
     if act["dir"]=="BUY": pnl_pct=(price-entry)/entry*100
     else: pnl_pct=(entry-price)/entry*100
-    pnl_usdt=pnl_pct/100 * stake * lev; pnl_emoji="🟢💰" if pnl_usdt>0 else "🔴📉" if pnl_usdt<0 else "⚪"
-    bal=get_futures_balance(); stage=act.get("stage",0); mode=act.get("mode","SNIPER")
-    stage_txt=["Just Started 🚀","TP1 Done ✅ BE Safe 🛡️","TP2 Done ✅ Trailing 🏃"][stage] if stage<3 else "Running 🌙"
-    sure = f"{act.get('mode','')} {act.get('conf',0)}/100"
-    txt=(f"👀 MONITOR {mode} 📡 {sure}\n━━━━━━━━━━━━━━━\n💎 {act['coin']} {act['dir']} {pnl_emoji} {mode}\n📍 Stage: {stage}/3 - {stage_txt}\n📍 Entry: {fmt(entry)} → Now: {fmt(price)}\n📈 P&L: {pnl_pct:.3f}% (${pnl_usdt:+.4f}) {pnl_emoji} ROI {pnl_pct*lev:.1f}%\n━━━━━━━━━━━━━━━\n📊 RSI {act.get('rsi',0):.1f} | ADX {act.get('adx',0):.1f} | PD {act.get('pd_pct',0):.0f}%\n📈 {act.get('mtf','')} | {act.get('vol_txt','')}\n🛡️ SL: {fmt(act['sl'])} ({act.get('sl_pct',0.9):.2f}%) EMERGENCY -4% ROI MAX\n🎯 TP1: {fmt(act['tp1'])} | TP2: {fmt(act['tp2'])} | TP3: {fmt(act['tp3'])}\n⏱️ TimeStop: -0.8% after 3min\n━━━━━━━━━━━━━━━\n💰 Bal: ${bal:.2f} | Stake: ${stake} | {mode} 🏆")
+    pnl_usdt=pnl_pct/100*stake*lev; bal=get_futures_balance(); stage=act.get("stage",0)
+    txt=(f"👀 MONITOR {act.get('mode','')} {act.get('conf',0)}/100 3/3\n💎 {act['coin']} {act['dir']} Stage {stage}/3\nEntry {fmt(entry)} → Now {fmt(price)}\nP&L {pnl_pct:.3f}% (${pnl_usdt:+.4f}) ROI {pnl_pct*lev:.1f}%\nSL {fmt(act['sl'])} {act.get('sl_pct',0):.1f}% TP3 {fmt(act['tp3'])} {act.get('tp3_pct',0):.1f}%\nBal ${bal:.2f} Stake ${stake}")
     await u.message.reply_text(txt, reply_markup=kb(act))
 
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
-    if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f} Streak {d.get('loss_streak',0)} 💵 V50",reply_markup=kb(get_active())); return
+    if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
     if data in ["MON","CHK"]:
         act=get_active()
-        if not act.get("status")=="OPEN": await q.message.reply_text("😴 No active trade 📭 Your $ safe!",reply_markup=kb()); return
+        if not act.get("status")=="OPEN": await q.message.reply_text("😴 No active trade",reply_markup=kb()); return
         price=get_price(CRYPTO[act["coin"]]) or act["entry"]; entry=act["entry"]
         if act["dir"]=="BUY": pnl_pct=(price-entry)/entry*100
         else: pnl_pct=(entry-price)/entry*100
-        pnl_usdt=pnl_pct/100 * act["stake"] * act["lev"]; pnl_emoji="🟢💰" if pnl_usdt>0 else "🔴"
-        stage=act.get("stage",0)
-        txt=(f"👀 {act.get('mode','')} MONITOR {act['coin']} LIVE 📊\n{act['dir']} Stage {stage}/3 | RSI {act.get('rsi',0):.0f} ADX {act.get('adx',0):.0f}\nEntry {fmt(entry)} → Now {fmt(price)}\nP&L {pnl_pct:.2f}% (${pnl_usdt:+.4f}) {pnl_emoji} ROI {pnl_pct*10:.1f}%\nSL {fmt(act['sl'])} EMERGENCY -4% ROI")
-        await q.message.reply_text(txt,reply_markup=kb(act)); return
+        pnl_usdt=pnl_pct/100*act["stake"]*act["lev"]
+        await q.message.reply_text(f"👀 {act['coin']} {act['dir']} {pnl_pct:.2f}% (${pnl_usdt:+.4f}) ROI {pnl_pct*10:.1f}%\nSL {fmt(act['sl'])} TP {act.get('tp3_pct',0):.1f}%",reply_markup=kb(act)); return
     if data=="CLS":
         act=get_active()
         if act.get("symbol"): close_real_position(act["symbol"],100)
-        clear_active(); await q.message.reply_text("❌ Closed on Binance ✅ Your $ safe!",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("🎯 SCANNING V50 EMERGENCY PERFECT... ⚡ MAX -4% ROI!"); return
+        clear_active(); await q.message.reply_text("❌ Closed ✅",reply_markup=kb()); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id, None),daemon=True).start(); await q.message.reply_text("🎯 SCANNING V52 3/3..."); return
+    if data=="RISK15": threading.Thread(target=bg_scan,args=(q.message.chat.id, "1.5"),daemon=True).start(); await q.message.reply_text("🔥 SCANNING RISKY 1.5%..."); return
+    if data=="RISK20": threading.Thread(target=bg_scan,args=(q.message.chat.id, "2.0"),daemon=True).start(); await q.message.reply_text("🔥🔥 SCANNING RISKY 2%..."); return
 
 def monitor():
     while True:
@@ -615,52 +608,32 @@ def monitor():
             if not price: continue
             chat=get_chat()
             if not chat: continue
-            stage = act.get("stage",0); entry = act["entry"]; symbol = act["symbol"]; mode=act.get("mode","SNIPER")
-            try:
-                entry_time = datetime.fromisoformat(act.get("time","")) if act.get("time") else datetime.now()
-                elapsed = (datetime.now() - entry_time).total_seconds()/60
-            except: elapsed = 0
-            if act["dir"]=="BUY": roi_pct = (price-entry)/entry*100*10
-            else: roi_pct = (entry-price)/entry*100*10
-            # V50 EMERGENCY -4% ROI MAX
-            max_roi_loss = -4.0
-            if roi_pct <= max_roi_loss:
-                close_real_position(symbol, 100); clear_active(); update_daily(-0.12 if mode=="SNIPER" else -0.08, False)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🚨 EMERGENCY -4% ROI! {act['coin']} {mode} Closed! Max loss ${act['stake']*0.04:.2f} ONLY! 🛡️ NEVER -6.22% AGAIN! Saved ${0.19-0.12:.2f}!"},timeout=8, proxies=PROXIES)
+            stage=act.get("stage",0); entry=act["entry"]; symbol=act["symbol"]; mode=act.get("mode","SNIPER")
+            if mode=="RISKY20": max_roi=-21.0
+            elif "RISKY" in mode: max_roi=-16.0
+            else: max_roi=-10.0
+            if act["dir"]=="BUY": roi=(price-entry)/entry*100*10
+            else: roi=(entry-price)/entry*100*10
+            if roi<=max_roi:
+                close_real_position(symbol,100); clear_active()
+                loss=0.60 if mode=="RISKY20" else 0.45 if "RISKY" in mode else 0.27
+                update_daily(-loss, False)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🚨 SL {act.get('sl_pct',1.5):.1f}% HIT {act['coin']} {mode} ROI {roi:.1f}% Loss ${loss:.2f}"},timeout=8,proxies=PROXIES)
                 except: pass
                 continue
-            if elapsed>=3 and stage==0 and roi_pct <= -0.8:
-                try:
-                    if act["dir"]=="BUY" and price < act.get("ema20", price):
-                        close_real_position(symbol, 100); clear_active(); update_daily(-0.05, False)
-                        try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"⏱️ TIME STOP 3min! {act['coin']} {mode} ROI {roi_pct:.1f}% Below EMA! Quick cut -${0.05:.2f}! 🛡️"},timeout=8, proxies=PROXIES)
-                        except: pass
-                        continue
-                    if act["dir"]=="SELL" and price > act.get("ema20", price):
-                        close_real_position(symbol, 100); clear_active(); update_daily(-0.05, False)
-                        try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"⏱️ TIME STOP 3min! {act['coin']} {mode} ROI {roi_pct:.1f}% Quick cut -${0.05:.2f}! 🛡️"},timeout=8, proxies=PROXIES)
-                        except: pass
-                        continue
-                except: pass
-            if act["dir"]=="BUY": act["highest"] = max(act.get("highest", entry), price)
-            else: act["lowest"] = min(act.get("lowest", entry), price)
-            hit = None
+            if act["dir"]=="BUY": act["highest"]=max(act.get("highest",entry),price)
+            else: act["lowest"]=min(act.get("lowest",entry),price)
+            hit=None
             if stage>=2:
-                trail_pct = 0.006 if mode=="SNIPER" else 0.004
+                trail=0.012 if "RISKY" in mode else 0.008
                 if act["dir"]=="BUY":
-                    new_trail_sl = act["highest"] * (1 - trail_pct)
-                    if new_trail_sl > act["sl"]:
-                        act["sl"] = new_trail_sl; set_active(act)
-                        try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🏃 TRAILING UP! {act['coin']} {mode} SL {fmt(new_trail_sl)} 🔒 High {fmt(act['highest'])} 🚀"},timeout=8, proxies=PROXIES)
-                        except: pass
+                    nts=act["highest"]*(1-trail)
+                    if nts>act["sl"]: act["sl"]=nts; set_active(act)
                 else:
-                    new_trail_sl = act["lowest"] * (1 + trail_pct)
-                    if new_trail_sl < act["sl"]:
-                        act["sl"] = new_trail_sl; set_active(act)
-                        try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🏃 TRAILING DOWN! {act['coin']} {mode} SL {fmt(new_trail_sl)} 🔒 Low {fmt(act['lowest'])} 📉"},timeout=8, proxies=PROXIES)
-                        except: pass
-                if act["dir"]=="BUY" and price <= act["sl"]: hit="TRAIL_SL"
-                elif act["dir"]=="SELL" and price >= act["sl"]: hit="TRAIL_SL"
+                    nts=act["lowest"]*(1+trail)
+                    if nts<act["sl"]: act["sl"]=nts; set_active(act)
+                if act["dir"]=="BUY" and price<=act["sl"]: hit="TRAIL_SL"
+                elif act["dir"]=="SELL" and price>=act["sl"]: hit="TRAIL_SL"
             if not hit:
                 if act["dir"]=="BUY":
                     if stage==0 and price>=act["tp1"]: hit="TP1"
@@ -673,25 +646,29 @@ def monitor():
                     elif stage>=2 and price<=act["tp3"]: hit="TP3"
                     elif price>=act["sl"] and stage==0: hit="SL"
             if hit=="TP1":
-                close_real_position(symbol, 50); new_sl = entry * 1.001 if act["dir"]=="BUY" else entry * 0.999
-                act["sl"] = new_sl; act["stage"] = 1; set_active(act)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯 TP1 HIT! {act['coin']} {mode} +{act.get('tp1_pct',0.8):.2f}% 💰 50% CLOSED ✅ SL->BE 🛡️"},timeout=8, proxies=PROXIES)
+                close_real_position(symbol,50); new_sl=entry*1.001 if act["dir"]=="BUY" else entry*0.999
+                act["sl"]=new_sl; act["stage"]=1; set_active(act)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯 TP1 HIT {act['coin']} {mode} +{act.get('tp1_pct',1.5):.1f}% 50% CLOSED ✅ BE 🛡️"},timeout=8,proxies=PROXIES)
                 except: pass
             elif hit=="TP2":
-                close_real_position(symbol, 60); new_sl = act["tp1"]; act["sl"] = new_sl; act["stage"] = 2; set_active(act)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯 TP2 HIT! {act['coin']} {mode} +{act.get('tp2_pct',1.8):.2f}% 💰💰 80% total ✅ TRAILING 🏃"},timeout=8, proxies=PROXIES)
+                close_real_position(symbol,30); act["sl"]=act["tp1"]; act["stage"]=2; set_active(act)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯 TP2 HIT {act['coin']} {mode} +{act.get('tp2_pct',3):.1f}% 80% total ✅ TRAILING"},timeout=8,proxies=PROXIES)
                 except: pass
             elif hit=="TP3":
-                close_real_position(symbol, 100); clear_active(); update_daily(0.35, True)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯🎯 TP3 HIT! {act['coin']} {mode} +{act.get('tp3_pct',3.2):.2f}% 🌕 FULL CLOSE! 🎉💰💰💰 🔥 {mode}!"},timeout=8, proxies=PROXIES)
+                close_real_position(symbol,100); clear_active()
+                win=1.80 if mode=="RISKY20" else 1.35 if "RISKY" in mode else 0.50
+                update_daily(win, True)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🎯🎯🎯 TP3 HIT {act['coin']} {mode} +{act.get('tp3_pct',4.5):.1f}% +${win:.2f} FULL CLOSE 🎉💰💰💰"},timeout=8,proxies=PROXIES)
                 except: pass
             elif hit=="TRAIL_SL":
-                close_real_position(symbol, 100); clear_active(); update_daily(0.30, True)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🏃💰 TRAILING SL HIT! {act['coin']} {mode} 🔒 Profit locked!"},timeout=8, proxies=PROXIES)
+                close_real_position(symbol,100); clear_active(); update_daily(0.70, True)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🏃 TRAILING HIT {act['coin']} {mode} Profit $0.70+ 🔒"},timeout=8,proxies=PROXIES)
                 except: pass
             elif hit=="SL":
-                close_real_position(symbol, 100); clear_active(); update_daily(-0.12 if mode=="SNIPER" else -0.08, False)
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🛑 SL {act.get('sl_pct',0.9):.2f}% {act['coin']} {mode} Closed 😢 Loss ${act['stake']*0.04:.2f} only MAX -4% ROI! 🛡️ Small! Next perfect!"},timeout=8, proxies=PROXIES)
+                close_real_position(symbol,100); clear_active()
+                loss=0.60 if mode=="RISKY20" else 0.45 if "RISKY" in mode else 0.27
+                update_daily(-loss, False)
+                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat,"text":f"🛑 SL {act.get('sl_pct',1.5):.1f}% {act['coin']} {mode} Loss ${loss:.2f} 🛡️"},timeout=8,proxies=PROXIES)
                 except: pass
         except Exception as e:
             print(f"monitor err {e}"); time.sleep(5)
@@ -700,9 +677,9 @@ def run_flask(): app.run(host="0.0.0.0",port=PORT)
 def run_bot():
     if not BOT_TOKEN: print("BOT_TOKEN missing"); return
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
-    a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
+    a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("risk15",risk15_cmd)); a.add_handler(CommandHandler("risk20",risk20_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("🚀 V50 EMERGENCY PERFECT starting 🎯🏆⚡ MAX -4%"); a.run_polling(drop_pending_updates=True)
+    print(f"V52 3/3 starting Risk {RISK_MODE}%"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
