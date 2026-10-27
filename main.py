@@ -52,8 +52,10 @@ def get_futures_balance():
 
 def get_trade_amount(mode="SNIPER"): return 3.0
 
+# FIXED - BLACKLIST KORUUSDT + FAKE COINS
 def get_real_alt_futures_FIXED():
-    fast_meme = ["PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT","1000PEPEUSDT","1000FLOKIUSDT","1000BONKUSDT","1000SHIBUSDT","DOGEUSDT","SHIBUSDT","MEMEUSDT","ORDIUSDT","SATSUSDT","RATSUSDT","BOMEUSDT","WUSDT","ENAUSDT","ETHFIUSDT","BBUSDT","NOTUSDT","TURBOUSDT","PEOPLEUSDT","MOGUSDT","POPCATUSDT","NEIROUSDT","PNUTUSDT","ACTUSDT","GOATUSDT","MOODENGUSDT","CHILLGUYUSDT","FARTCOINUSDT","AI16ZUSDT","VIRTUALUSDT","PENGUUSDT"]
+    fast_meme = ["PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT","1000PEPEUSDT","1000FLOKIUSDT","1000BONKUSDT","1000SHIBUSDT","DOGEUSDT","SHIBUSDT","MEMEUSDT","BOMEUSDT","WUSDT","ENAUSDT","ETHFIUSDT","BBUSDT","NOTUSDT","TURBOUSDT","PEOPLEUSDT","POPCATUSDT","PNUTUSDT","ACTUSDT","GOATUSDT","MOODENGUSDT","CHILLGUYUSDT","FARTCOINUSDT","AI16ZUSDT","VIRTUALUSDT","PENGUUSDT"]
+    blacklist = ["KORUUSDT","RATSUSDT","SATSUSDT","ORDIUSDT","MOGUSDT","1000RATSUSDT","1000SATSUSDT","TURBOUSDT","PEOPLEUSDT","MEMEUSDT","ORDIUSDT"]
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",headers=HEADERS,timeout=15,proxies=PROXIES).json()
         valid=[]
@@ -62,42 +64,46 @@ def get_real_alt_futures_FIXED():
                 sym=t.get('symbol','')
                 if not sym.endswith('USDT'): continue
                 if sym in ["BTCUSDT","ETHUSDT","BNBUSDT","USDCUSDT"]: continue
+                if sym in blacklist: continue
+                if sym in fast_meme and sym in ["TURBOUSDT","PEOPLEUSDT","MEMEUSDT","ORDIUSDT","RATSUSDT","SATSUSDT"]: continue
                 try:
                     vol=float(t.get('quoteVolume',0))
-                    if vol<2000000: continue
+                    if vol<3000000: continue
                     change=float(t.get('priceChangePercent',0))
                     score = abs(change) * (vol/1000000)
                     if abs(change)<1.0: score = score*0.5
                     valid.append((sym, score, vol, change))
                 except: continue
             valid.sort(key=lambda x: x[1], reverse=True)
-            top=[s[0] for s in valid[:110]]
+            top=[s[0] for s in valid[:115]]
             for m in fast_meme:
-                if m not in top: top.append(m)
+                if m not in top and m not in blacklist: top.append(m)
             if len(top)<120:
-                extra=["SOLUSDT","AVAXUSDT","SUIUSDT","ARBUSDT","OPUSDT","TIAUSDT","WLDUSDT","NEARUSDT","APTUSDT","SEIUSDT","PYTHUSDT","JUPUSDT","FETUSDT","RNDRUSDT","TAOUSDT","HYPEUSDT","ONDOUSDT","LINKUSDT","INJUSDT","RENDERUSDT","ARUSDT","AAVEUSDT","XRPUSDT","ADAUSDT","DOTUSDT","MATICUSDT","LTCUSDT","BCHUSDT","ETCUSDT","FILUSDT","STXUSDT","IMXUSDT","FLOWUSDT","GALAUSDT","CHZUSDT","SANDUSDT","MANAUSDT","AXSUSDT","APEUSDT","LDOUSDT","DYDXUSDT","COMPUSDT","MKRUSDT","SNXUSDT","UNIUSDT","ENSUSDT"]
+                extra=["SOLUSDT","AVAXUSDT","SUIUSDT","ARBUSDT","OPUSDT","TIAUSDT","WLDUSDT","NEARUSDT","APTUSDT","SEIUSDT","PYTHUSDT","JUPUSDT","FETUSDT","RNDRUSDT","TAOUSDT","HYPEUSDT","ONDOUSDT","LINKUSDT","INJUSDT","RENDERUSDT","ARUSDT","AAVEUSDT","XRPUSDT","ADAUSDT","DOTUSDT","MATICUSDT","LTCUSDT","BCHUSDT","ETCUSDT","FILUSDT","STXUSDT","IMXUSDT","FLOWUSDT","GALAUSDT","CHZUSDT","SANDUSDT","MANAUSDT","AXSUSDT","APEUSDT","LDOUSDT","DYDXUSDT","COMPUSDT","MKRUSDT","SNXUSDT","UNIUSDT","ENSUSDT","ATOMUSDT","FTMUSDT","RUNEUSDT"]
                 for e in extra:
-                    if e not in top: top.append(e)
+                    if e not in top and e not in blacklist: top.append(e)
                     if len(top)>=135: break
-            return top[:135]
+            clean = [s for s in top[:135] if s not in blacklist]
+            return clean
     except: pass
-    return fast_meme + ["SOLUSDT","AVAXUSDT","SUIUSDT","ARBUSDT","OPUSDT","TIAUSDT","WLDUSDT","NEARUSDT","APTUSDT","SEIUSDT","PYTHUSDT","JUPUSDT","FETUSDT","RNDRUSDT","TAOUSDT","HYPEUSDT","ONDOUSDT","LINKUSDT","INJUSDT","RENDERUSDT","ARUSDT","AAVEUSDT"]
+    return [s for s in fast_meme if s not in blacklist] + ["SOLUSDT","AVAXUSDT","SUIUSDT","ARBUSDT","OPUSDT","TIAUSDT","WLDUSDT","NEARUSDT","APTUSDT","SEIUSDT","PYTHUSDT","JUPUSDT","FETUSDT","RNDRUSDT","TAOUSDT","HYPEUSDT","ONDOUSDT","LINKUSDT","INJUSDT","RENDERUSDT","ARUSDT","AAVEUSDT"]
 
 def get_btc_filter():
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",params={"symbol":"BTCUSDT"},headers=HEADERS,timeout=4,proxies=PROXIES).json()
         c=float(r.get('priceChangePercent',0))
-        if c>=2.0: return True, f"₿ BTC +{c:.1f}% Strong Bull 🌞🚀🔥 FAST!", c
-        if c<=-2.0: return True, f"₿ BTC {c:.1f}% Strong Bear 🌧️📉🔥 FAST!", c
-        if abs(c)<0.8: return True, f"₿ BTC {c:.1f}% Calm = BEST for SCALP FAST 😴✅💎⚡", c
-        return True, f"₿ BTC {c:.1f}% Mid FAST ⚡", c
-    except: return True, "₿ BTC N/A 🤷", 0
+        if c>=2.0: return True, f"₿ BTC +{c:.1f}% Strong Bull FAST!", c
+        if c<=-2.0: return True, f"₿ BTC {c:.1f}% Strong Bear FAST!", c
+        if abs(c)<0.8: return True, f"₿ BTC {c:.1f}% Calm = BEST for SCALP FAST", c
+        return True, f"₿ BTC {c:.1f}% Mid FAST", c
+    except: return True, "₿ BTC N/A", 0
 
 def get_symbol_filters(symbol):
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo",params={"symbol":symbol},headers=HEADERS,timeout=8,proxies=PROXIES).json()
         for s in r.get('symbols',[]):
             if s['symbol']==symbol:
+                if s.get('status')!='TRADING': return None, None
                 qp=int(s.get('quantityPrecision',3)); ss=0.001
                 for f in s.get('filters',[]):
                     if f.get('filterType')=='LOT_SIZE': ss=float(f.get('stepSize',0.001))
@@ -113,10 +119,12 @@ def setup_symbol(symbol):
 
 def place_real_order(symbol, direction, usdt_amount):
     try:
+        filters = get_symbol_filters(symbol)
+        if filters[0] is None: print(f"Filter invalid for {symbol}"); return None
         rp=requests.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}",proxies=PROXIES,headers=HEADERS,timeout=10).json()
         price=float(rp.get('price',0))
         if price<=0: return None
-        qp, ss=get_symbol_filters(symbol)
+        qp, ss = filters
         raw=(usdt_amount*10)/price
         if ss>0: raw=math.floor(raw/ss)*ss
         raw=round(raw, qp)
@@ -124,8 +132,11 @@ def place_real_order(symbol, direction, usdt_amount):
         setup_symbol(symbol)
         order=binance_signed_request("POST","/fapi/v1/order",{"symbol":symbol,"side":"BUY" if direction=="BUY" else "SELL","type":"MARKET","quantity":raw})
         if order and order.get('orderId'): return order
+        print(f"Order fail {symbol}: {order}")
         return None
-    except: return None
+    except Exception as e:
+        print(f"Order exception {symbol}: {e}")
+        return None
 
 def close_real_position(symbol, qty_percent=100):
     try:
@@ -138,6 +149,7 @@ def close_real_position(symbol, qty_percent=100):
             side="SELL" if amt>0 else "BUY"
             cq=abs(amt)*qty_percent/100.0
             qp, ss=get_symbol_filters(symbol)
+            if qp is None: qp=3; ss=0.001
             if ss>0: cq=math.floor(cq/ss)*ss
             cq=round(cq, qp)
             if cq<=0: cq=abs(amt)
@@ -175,9 +187,9 @@ def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 def get_chat(): return load_json(CHAT_FILE,{}).get("id")
 
 @app.get("/")
-def home(): return f"V70 TP1 55% ROI BOT Bal ${get_futures_balance():.2f} SL45% TP1 55% TP2 80% TP3 120% TP4 180% - 135 FAST COINS - Bot SETS SL + BE exact after TP1",200
+def home(): return f"V70 TP1 55% ROI BOT Bal ${get_futures_balance():.2f} SL45% TP1 55% TP2 80% TP3 120% TP4 180% - 135 FAST COINS - Bot SETS SL + BE exact after TP1 - V72 FIXED KORU",200
 @app.get("/health")
-def health(): return "OK V70 TP1 55% ROI BOT FAST 135",200
+def health(): return "OK V72 FIXED KORUUSDT BLACKLIST + RETRY",200
 
 def fmt(v):
     try:
@@ -398,7 +410,7 @@ def send_chart_photo(chat_id, file_path, caption):
 def bg_scan(chat_id, risk_mode_override=None):
     try:
         bal=get_futures_balance(); all_symbols=get_real_alt_futures_FIXED()
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚡💎 SKELLY'S V70 TP1 55% ROI FAST BOT! 💎⚡\n🌐 Scanning {len(all_symbols)} FAST COINS! 135 coins ⚡\n⚡ Timeframe: 15m FAST + 1H + 4H = Quick TP FAST!\n🕯️ Fast Patterns: HAMMER FAST / ENGULF FAST ⚡\n📊 Filters: RSI 20-85 + ADX >=10 + OB >=1.02 + EMA <1.5% = FAST!\n🎯 SL 45% ROI (4.5%) 🛡️ Bot SETS SL! | TP1 55% ROI (5.5%) = $1.65 | TP2 80% | TP3 120% | TP4 180% 🚀⚡\n📈 Full FAST colored chart 15m + candle label!\n⏳ 20 sec... Quick scalp! 🙏⚡👑"},timeout=10,proxies=PROXIES)
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚡💎 SKELLY'S V72 TP1 55% ROI FAST BOT FIXED KORU! Scanning {len(all_symbols)} FAST COINS! SL45% TP1 55% TP2 80% TP3 120% TP4 180% - Auto retry 5 coins!"},timeout=10,proxies=PROXIES)
         raws=[]; near_misses=[]; fails=[]
         def scan_one(sym):
             trade, msg, meta = analyze_PERFECT_V67_4H(sym)
@@ -422,66 +434,83 @@ def bg_scan(chat_id, risk_mode_override=None):
                 forced = {"symbol":sym,"code":code,"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl_pct":sl_pct*100,"tp1_pct":tp1_pct*100,"tp2_pct":tp2_pct*100,"tp3_pct":tp3_pct*100,"tp4_pct":tp4_pct*100,"rsi":best_fallback.get("rsi",50),"stoch":50,"adx":best_fallback.get("adx",12),"mtf":best_fallback.get("mtf",""),"bos":best_fallback.get("bos",""),"ob":f"OB {best_fallback.get('ob',1.03):.2f}","btc":"BTC Mid","ema_dist":"1.0%","conf":68,"pattern":best_fallback.get("pattern","HAMMER"),"bias":best_fallback.get("bias","BULLISH"),"pat_score":best_fallback.get("pat",2),"choppy":0,"vol":False}
                 raws.append(forced)
         if not raws:
-            txt=f"⚡💎 V70 FAST - PROTECT MODE 🛡️⚡\nScanned {len(all_symbols)} FAST COINS! No entry.\nBal ${bal:.2f} safe!\n" + "\n".join(fails[:6])
+            txt=f"⚡💎 V72 FAST - PROTECT MODE\nScanned {len(all_symbols)} FAST COINS! No entry.\nBal ${bal:.2f} safe!\n" + "\n".join(fails[:6])
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt},timeout=10,proxies=PROXIES); return
-        raws.sort(key=lambda x: (x['conf']), reverse=True)
-        best=raws[0]
-        if get_active().get("status")=="OPEN":
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚠️ Active trade {get_active().get('coin')} OPEN!"},timeout=10,proxies=PROXIES); return
-        mode="V70 TP1 55% ROI FAST"
+        
+        # V72 FIX: AUTO RETRY TOP 5
+        raws.sort(key=lambda x: (x['conf'], x['adx'], x['pat_score']), reverse=True)
+        best = None
+        order_res = None
+        tried_symbols = []
+        for candidate in raws[:5]:
+            tried_symbols.append(candidate['symbol'])
+            tmp_res = place_real_order(candidate['symbol'], candidate['dir'], get_trade_amount("FAST"))
+            if tmp_res and tmp_res.get('orderId'):
+                best = candidate
+                order_res = tmp_res
+                print(f"SUCCESS order {candidate['symbol']} ID {tmp_res.get('orderId')}")
+                break
+            else:
+                print(f"FAILED order {candidate['symbol']}, trying next...")
+                time.sleep(0.3)
+                continue
+        
+        if not best or not order_res:
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Order failed for {', '.join(tried_symbols)} - All 5 failed! Check balance $ {bal:.2f} / filters / Binance min notional. Try again!"},timeout=10,proxies=PROXIES); return
+
+        mode="V72 TP1 55% ROI FAST FIXED KORU"
         amt=get_trade_amount(mode); real_symbol=best['symbol']
-        order_res=place_real_order(real_symbol, best['dir'], amt)
-        if not order_res:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"❌ Order failed {real_symbol}"},timeout=10,proxies=PROXIES); return
         set_active({"status":"OPEN","coin":best['code'],"symbol":real_symbol,"dir":best['dir'],"entry":best['entry'],"sl":best['sl'],"tp1":best['tp1'],"tp2":best['tp2'],"tp3":best['tp3'],"tp4":best['tp4'],"conf":best['conf'],"stake":amt,"lev":10,"stage":0,"highest":best['entry'],"lowest":best['entry'],"sl_pct":best['sl_pct'],"tp1_pct":best['tp1_pct'],"tp4_pct":best['tp4_pct'],"mode":mode,"time":str(datetime.now()),"pattern":best['pattern']})
         chart_path = generate_colored_chart_4H(real_symbol, best)
-        txt=(f"⚡💎 V70 TP1 55% ROI FOUND! ✅🏆⚡\n💎 {best['symbol']} {best['dir']} @ {fmt(best['entry'])} 💰 FAST ENTRY! 🎯⚡\n🕯️ {best['pattern']} {best['bias']} Score {best['pat_score']}/3 Conf {best['conf']:.0f}% FAST ⚡\n💰 ${amt} 10x | 🛑 SL {best['sl_pct']:.1f}% (45% ROI) 🛡️ | TP1 {best['tp1_pct']:.1f}% (55% ROI) = $1.65 FAST! | TP2 {best['tp2_pct']:.1f}% (80%) | TP3 {best['tp3_pct']:.1f}% (120%) | TP4 {best['tp4_pct']:.1f}% (180%) 🎯⚡\n🆔 ORDER {order_res.get('orderId')} ✅ {mode}\n💵 Bal ${bal:.2f} | Chart below 👇📊")
+        txt=(f"⚡💎 V72 TP1 55% ROI FIXED KORU FOUND! ✅🏆⚡\n💎 {best['symbol']} {best['dir']} @ {fmt(best['entry'])} 💰 FAST ENTRY! 🎯⚡\n🕯️ {best['pattern']} Score {best['pat_score']}/3 Conf {best['conf']:.0f}% FAST ⚡\n💰 ${amt} 10x | 🛑 SL {best['sl_pct']:.1f}% (45% ROI) 🛡️ | TP1 {best['tp1_pct']:.1f}% (55% ROI) = $1.65 | TP2 {best['tp2_pct']:.1f}% (80%) | TP3 {best['tp3_pct']:.1f}% (120%) | TP4 {best['tp4_pct']:.1f}% (180%) 🎯⚡\n🆔 ORDER {order_res.get('orderId')} ✅ {mode} Tried: {', '.join(tried_symbols)}\n💵 Bal ${bal:.2f} | Chart below 👇📊")
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt},timeout=10,proxies=PROXIES)
         if chart_path and os.path.exists(chart_path):
-            send_chart_photo(chat_id, chart_path, f"📊 {best['symbol']} V70 TP1 55% ROI FAST CHART ⚡")
-    except Exception as e: print(f"SCAN ERR {e}")
+            send_chart_photo(chat_id, chart_path, f"📊 {best['symbol']} V72 FIXED KORU TP1 55% ROI FAST CHART ⚡")
+    except Exception as e: 
+        print(f"SCAN ERR {e}")
+        import traceback; traceback.print_exc()
 
-# V71 - EXACT UI LIKE YOUR SCREENSHOTS - V67 DETAILED + V70 VALUES
 async def start(u,c):
     save_chat(u.message.chat.id); bal=get_futures_balance()
     await u.message.reply_text(
-        f"🧠💎 SKELLY'S V70 TP1 55% ROI FAST BOT 👑✨📊🕯️🧠\n"
-        f"💰 Futures ${bal:.2f} USDT 💵 Risk {RISK_MODE}% ⚙️ 135 FAST COINS ⚡ 4H Accurate\n\n"
+        f"🧠💎 SKELLY'S V72 TP1 55% ROI FAST BOT FIXED KORU 👑✨📊🕯️🧠\n"
+        f"💰 Futures ${bal:.2f} USDT 💵 Risk {RISK_MODE}% ⚙️ 135 FAST COINS ⚡ FIXED!\n\n"
         f"🧠 PERFECT ANALYSIS LIKE ME:\n"
         f"🌐 Scans 135 Binance Futures — 15m FAST + 1H + 4H Timeframe Accurate! ⚡\n"
         f"🏆 ONLY FAST PERFECT GOD ENTRY — Analyse like pro trader! Quick TP!\n"
-        f"🛡️ Protects $ Balance but MUST snap perfect fast!\n\n"
+        f"🛡️ Protects $ Balance but MUST snap perfect fast! KORUUSDT removed! ✅\n\n"
         f"🕯️ FAST CANDLE PATTERNS 2/3+ PERFECT:\n"
         f"🔨 HAMMER FAST 🟢💎⚡ / 🌠 SHOOTING STAR FAST 🔴💎⚡\n"
         f"🟩 BULL ENGULF FAST 🚀💎⚡ / 🟥 BEAR ENGULF FAST 📉💎⚡\n"
         f"Need body/wick ratio perfect + trend + volume FAST!\n\n"
-        f"📜 V70 TP1 55% ROI FAST RULES Accurate:\n"
+        f"📜 V72 TP1 55% ROI FAST RULES FIXED KORU Accurate:\n"
         f"✅ 15m/1H/4H 2/3 Aligned 💪💎 FAST Accurate\n"
         f"✅ FAST GOD Pattern 2/3+ Score + Bias Match 💎\n"
         f"✅ 💥 BOS FAST Vol 1.1x Confirm + 📚 OB >=1.02 🐋 + 💪 ADX >=10\n"
         f"✅ 📊 RSI 20-85 + 📈 Stoch <95 + 📏 EMA <1.5% + E200 <5%\n"
         f"✅ 🛡️ SL 45% ROI (4.5%) Bot SETS SL + TIGHT! 🛡️\n"
-        f"✅ 💰 TP1 55% ROI (5.5%) = $1.65 25% + BE exact after TP1 🔒\n"
+        f"✅ 💰 TP1 55% ROI (5.5%) = $1.65 25% + BE exact after TP1 🔒 FIXED!\n"
         f"✅ 💰 TP2 80% ROI (8%) = $2.40 25% + SL to TP1 🔒\n"
         f"✅ 💰 TP3 120% ROI (12%) = $3.60 25% TRAILING 🏃\n"
         f"✅ 💰 TP4 180% ROI (18%) = $5.40 25% 🏆\n"
-        f"✅ FALLBACK only if score >20 — Perfect not random! 🔥\n\n"
-        f"💵 V70 TP1 55% ROI = $1.65 25% + BE EXACT 🛡️🔒\n"
+        f"✅ FALLBACK only if score >20 — Perfect not random! 🔥\n"
+        f"✅ KORUUSDT blacklist + Auto retry top 5 coins! No more order failed! ✅\n\n"
+        f"💵 V72 TP1 55% ROI = $1.65 25% + BE EXACT 🛡️🔒\n"
         f"💵 TP2 80% ROI = $2.40 25% SL to TP1 🔒\n"
         f"💵 TP3 120% ROI = $3.60 25% TRAILING 🏃\n"
         f"💵 TP4 180% ROI = $5.40 25% 🏆\n"
         f"📊 FAST Chart 15m + Candle Label Bubble! Complete coloured chart!\n\n"
-        f"Press ⚡ SCAN 135 FAST TP1 55% ROI now! Must trade perfect fast! 🎯🚀💎📊🕯️⚡",
+        f"Press ⚡ SCAN 135 FAST TP1 55% ROI now! FIXED KORU! 🎯🚀💎📊🕯️⚡",
         reply_markup=kb(get_active())
     )
 
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, None),daemon=True).start()
-    await u.message.reply_text("⚡ V70 TP1 55% ROI FAST SCANNING 135 FAST COINS... 20 sec... Quick scalp! ⚡📊 FAST!")
+    await u.message.reply_text("⚡ V72 TP1 55% ROI FAST FIXED KORU SCANNING 135 FAST COINS... 20 sec... No more KORU fail! ⚡📊 FAST!")
 
-async def risk15_cmd(u,c): save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "1.5"),daemon=True).start(); await u.message.reply_text("V70 RISK 1.5% FAST...")
-async def risk20_cmd(u,c): save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "2.0"),daemon=True).start(); await u.message.reply_text("V70 RISK 2% FAST...")
-async def daily_cmd(u,c): d=get_daily(); await u.message.reply_text(f"📊 Daily P&L V70 TP1 55% ROI FAST {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active()))
+async def risk15_cmd(u,c): save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "1.5"),daemon=True).start(); await u.message.reply_text("V72 RISK 1.5% FAST...")
+async def risk20_cmd(u,c): save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id, "2.0"),daemon=True).start(); await u.message.reply_text("V72 RISK 2% FAST...")
+async def daily_cmd(u,c): d=get_daily(); await u.message.reply_text(f"📊 Daily P&L V72 FIXED KORU {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active()))
 async def chart_cmd(u,c):
     save_chat(u.message.chat.id)
     symbol = (c.args[0] if c.args else "PEPEUSDT").upper()
@@ -493,7 +522,7 @@ async def chart_cmd(u,c):
         pat, bias, score = detect_candle_pattern_META(kl)
         dummy_trade = {"symbol":symbol,"dir":"BUY","entry":price,"sl":price*0.955,"tp1":price*1.055,"tp4":price*1.18,"sl_pct":4.5,"tp1_pct":5.5,"tp4_pct":18.0}
         path = generate_colored_chart_4H(symbol, dummy_trade)
-        await u.message.reply_photo(photo=open(path,'rb'), caption=f"{symbol} V70 Chart TP1 55% ROI FAST")
+        await u.message.reply_photo(photo=open(path,'rb'), caption=f"{symbol} V72 FIXED KORU Chart TP1 55% ROI FAST")
     except Exception as e: await u.message.reply_text(f"Chart err {e}")
 
 async def monitor_cmd(u,c):
@@ -503,16 +532,16 @@ async def monitor_cmd(u,c):
     if act["dir"]=="BUY": pnl_pct=(price-entry)/entry*100
     else: pnl_pct=(entry-price)/entry*100
     pnl_usdt=pnl_pct/100*stake*lev; bal=get_futures_balance()
-    await u.message.reply_text(f"👀 MONITOR FAST V70 TP1 55% {act['coin']} {act['dir']} Stage {act.get('stage',0)}/4 Entry {fmt(entry)} Now {fmt(price)} SL {act.get('sl_pct',4.5):.1f}% P&L {pnl_pct:.2f}% ROI {pnl_pct*lev:.1f}% Bal ${bal:.2f}", reply_markup=kb(act))
+    await u.message.reply_text(f"👀 MONITOR FAST V72 FIXED {act['coin']} {act['dir']} Stage {act.get('stage',0)}/4 Entry {fmt(entry)} Now {fmt(price)} SL {act.get('sl_pct',4.5):.1f}% P&L {pnl_pct:.2f}% ROI {pnl_pct*lev:.1f}% Bal ${bal:.2f}", reply_markup=kb(act))
 
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
-    if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 Daily P&L V70 TP1 55% ROI FAST {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
+    if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 Daily P&L V72 FIXED KORU {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
     if data=="CHART":
         act=get_active()
         if act.get("status")=="OPEN":
             path = generate_colored_chart_4H(act["symbol"], {"symbol":act["symbol"],"dir":act["dir"],"entry":act["entry"],"sl":act["sl"],"tp1":act["tp1"],"tp4":act["tp4"],"sl_pct":4.5,"tp1_pct":5.5,"tp4_pct":18.0})
-            if path: await q.message.reply_photo(photo=open(path,'rb'), caption=f"📊 {act['coin']} FAST Current Chart V70 TP1 55% ROI")
+            if path: await q.message.reply_photo(photo=open(path,'rb'), caption=f"📊 {act['coin']} FAST Current Chart V72 FIXED")
         else: await q.message.reply_text("😴 No active trade — use /chart PEPEUSDT")
         return
     if data in ["MON","CHK"]:
@@ -521,12 +550,12 @@ async def btn_handler(u,c):
         price=get_price(act["symbol"]) or act["entry"]; entry=act["entry"]
         if act["dir"]=="BUY": pnl_pct=(price-entry)/entry*100
         else: pnl_pct=(entry-price)/entry*100
-        await q.message.reply_text(f"👀 FAST V70 {act['coin']} {act['dir']} {pnl_pct:.2f}% SL {act.get('sl_pct',4.5):.1f}% TP1 {act.get('tp1_pct',5.5):.1f}%",reply_markup=kb(act)); return
+        await q.message.reply_text(f"👀 FAST V72 {act['coin']} {act['dir']} {pnl_pct:.2f}% SL {act.get('sl_pct',4.5):.1f}% TP1 {act.get('tp1_pct',5.5):.1f}%",reply_markup=kb(act)); return
     if data=="CLS":
         act=get_active()
         if act.get("symbol"): close_real_position(act["symbol"],100)
         clear_active(); await q.message.reply_text("❌ Closed Trade FAST",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id, None),daemon=True).start(); await q.message.reply_text("⚡ V70 SCANNING 135 FAST TP1 55% ROI... Quick TP! ⚡"); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id, None),daemon=True).start(); await q.message.reply_text("⚡ V72 SCANNING 135 FAST TP1 55% ROI FIXED KORU... Quick TP! ⚡"); return
 
 def monitor():
     while True:
@@ -606,7 +635,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("risk15",risk15_cmd)); a.add_handler(CommandHandler("risk20",risk20_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("chart",chart_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print(f"V70 TP1 55% ROI V71 UI starting"); a.run_polling(drop_pending_updates=True)
+    print(f"V72 FIXED KORUUSDT BLACKLIST + RETRY starting"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
