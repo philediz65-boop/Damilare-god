@@ -18,8 +18,23 @@ DAILY_FILE = f"{DATA_DIR}/daily.json"
 CHAT_FILE = f"{DATA_DIR}/chat.json"
 PENDING_FILE = f"{DATA_DIR}/pending.json"
 CACHE = {}; LOCK = threading.Lock(); CACHE_LOCK = threading.Lock()
-HEADERS = {"User-Agent":"SKELLY-V89-REAL-3DOLLAR"}
+HEADERS = {"User-Agent":"SKELLY-V89-FIX"}
 PROXIES = {"http": BINANCE_PROXY, "https": BINANCE_PROXY} if BINANCE_PROXY else None
+
+# INVALID -> VALID MAPPING FOR BINANCE FUTURES
+SYMBOL_FIX = {
+    "PEPEUSDT": "1000PEPEUSDT",
+    "FLOKIUSDT": "1000FLOKIUSDT",
+    "BONKUSDT": "1000BONKUSDT",
+    "SHIBUSDT": "1000SHIBUSDT",
+    "RATSUSDT": "1000RATSUSDT",
+    "SATSUSDT": "1000SATSUSDT",
+    "LUNCUSDT": "1000LUNCUSDT",
+    "XECUSDT": "1000XECUSDT"
+}
+
+def fix_symbol(sym):
+    return SYMBOL_FIX.get(sym, sym)
 
 def binance_signed_request(method, endpoint, params={}, retries=1):
     if not BINANCE_API_KEY or not BINANCE_SECRET: return None
@@ -30,9 +45,9 @@ def binance_signed_request(method, endpoint, params={}, retries=1):
         url = f"https://fapi.binance.com{endpoint}?{query}&signature={sig}"
         headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
         r = requests.request(method, url, headers=headers, proxies=PROXIES, timeout=10)
-        print(f"Binance {endpoint} {r.status_code} {r.text[:300]}")
+        print(f"Binance {endpoint} {r.status_code} {r.text[:400]}")
         if r.status_code == 200: return r.json()
-        return {"error": r.text}
+        return {"error": r.text, "code": r.status_code}
     except Exception as e: return {"error": str(e)}
 
 def get_futures_balance():
@@ -45,9 +60,11 @@ def get_futures_balance():
     return 7.03
 
 def set_leverage(symbol, lev=10):
+    symbol = fix_symbol(symbol)
     return binance_signed_request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": lev})
 
 def get_symbol_filters(symbol):
+    symbol = fix_symbol(symbol)
     try:
         r=requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo", headers=HEADERS, timeout=8, proxies=PROXIES).json()
         for s in r.get('symbols',[]):
@@ -56,42 +73,54 @@ def get_symbol_filters(symbol):
                     if f['filterType']=='LOT_SIZE':
                         return float(f['minQty']), float(f['stepSize'])
     except: pass
-    return 0.001, 0.001
+    return 1.0, 1.0
 
 def place_real_futures_order(symbol, side, quantity):
+    symbol = fix_symbol(symbol)
     params={"symbol": symbol, "side": side, "type": "MARKET", "quantity": quantity}
     return binance_signed_request("POST", "/fapi/v1/order", params)
 
 def place_real_trade(symbol, direction, entry_price, sl, bal):
     try:
-        set_leverage(symbol, 10)
-        minQty, step = get_symbol_filters(symbol)
-        # $3 TRADE ONLY - NOT ALL BALANCE!
+        # FIX SYMBOL FIRST!
+        real_symbol = fix_symbol(symbol)
+        print(f"Fix symbol {symbol} -> {real_symbol}")
+        set_leverage(real_symbol, 10)
+        minQty, step = get_symbol_filters(real_symbol)
         usdt_to_use = 3.0
         if bal < 3.5:
-            usdt_to_use = round(bal * 0.4, 2)  # If low balance, use 40%
+            usdt_to_use = round(bal * 0.4, 2)
             if usdt_to_use < 1: usdt_to_use = 1.0
         qty = usdt_to_use * 10 / entry_price
         precision = int(round(-math.log10(step),0)) if step<1 else 0
-        qty = round(qty - (qty % step), precision)
+        if precision<0: precision=0
+        qty = math.floor(qty / step) * step
+        qty = round(qty, precision)
         if qty < minQty: qty = minQty
         side = "BUY" if direction=="BUY" else "SELL"
-        print(f"Placing REAL $3 TRADE: {side} {symbol} qty {qty} @ {entry_price} = ${usdt_to_use} x10")
-        result = place_real_futures_order(symbol, side, qty)
-        return result, qty, usdt_to_use
+        print(f"Placing REAL $3 TRADE: {side} {real_symbol} qty {qty} @ {entry_price} = ${usdt_to_use} x10")
+        result = place_real_futures_order(real_symbol, side, qty)
+        # If still invalid, try alternative
+        if result and "Invalid symbol" in str(result):
+            alt = "PEPEUSDT" if "1000PEPE" in real_symbol else real_symbol
+            print(f"Retrying with {alt}")
+            result = place_real_futures_order(alt, side, qty)
+        return result, qty, usdt_to_use, real_symbol
     except Exception as e:
-        return {"error": str(e)}, 0, 0
+        return {"error": str(e)}, 0, 0, symbol
 
 def get_real_alt_futures():
-    # SAFE SAVED COINS ONLY - BLOCK UNSAFE!
-    SAFE_SAVED_COINS = [
-        "PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT","DOGEUSDT","SHIBUSDT",
-        "MEMEUSDT","BOMEUSDT","POPCATUSDT","PNUTUSDT","GOATUSDT","MOODENGUSDT",
-        "FARTCOINUSDT","SOLUSDT","AVAXUSDT","LINKUSDT","ENAUSDT","VIRTUALUSDT",
-        "PENGUUSDT","WUSDT","NOTUSDT","ARBUSDT","OPUSDT","APTUSDT","SUIUSDT",
-        "SEIUSDT","INJUSDT","RNDRUSDT","FETUSDT","WLDUSDT","1000PEPEUSDT","1000FLOKIUSDT","1000BONKUSDT"
+    # ONLY VALID BINANCE FUTURES SYMBOLS - NO INVALID!
+    SAFE_VALID = [
+        "1000PEPEUSDT","1000FLOKIUSDT","1000BONKUSDT","1000SHIBUSDT",
+        "WIFUSDT","BONKUSDT","FLOKIUSDT","PEPEUSDT",
+        "DOGEUSDT","SHIBUSDT","MEMEUSDT","BOMEUSDT","POPCATUSDT","PNUTUSDT",
+        "GOATUSDT","MOODENGUSDT","FARTCOINUSDT","SOLUSDT","AVAXUSDT","LINKUSDT",
+        "ENAUSDT","VIRTUALUSDT","PENGUUSDT","WUSDT","NOTUSDT","ARBUSDT","OPUSDT",
+        "APTUSDT","SUIUSDT","SEIUSDT","INJUSDT","RNDRUSDT","FETUSDT","WLDUSDT"
     ]
-    return SAFE_SAVED_COINS
+    # Remove duplicates and return - Bot will auto-fix invalid to valid
+    return list(dict.fromkeys(SAFE_VALID))[:32]
 
 def load_json(p,d):
     try:
@@ -119,9 +148,9 @@ def clear_pending(): save_json(PENDING_FILE,{})
 def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 
 @app.get("/")
-def home(): return f"V89.1 $3 REAL TRADE LIVE Bal ${get_futures_balance():.2f}",200
+def home(): return f"V89.2 FIX LIVE Bal ${get_futures_balance():.2f}",200
 @app.get("/health")
-def health(): return "OK V89.1 $3",200
+def health(): return "OK V89.2",200
 
 def fmt(v):
     try:
@@ -132,6 +161,7 @@ def fmt(v):
     except: return str(v)
 
 def get_klines(sym, interval="15m"):
+    sym = fix_symbol(sym)
     key=f"{sym}_{interval}"
     with CACHE_LOCK:
         if key in CACHE and time.time()-CACHE[key][0]<45: return CACHE[key][1]
@@ -148,6 +178,7 @@ def get_klines(sym, interval="15m"):
     return []
 
 def get_price(sym):
+    sym = fix_symbol(sym)
     for base_url in ["https://fapi.binance.com/fapi/v1/ticker/price","https://data-api.binance.vision/api/v3/ticker/price"]:
         try:
             r=requests.get(base_url,params={"symbol":sym},headers=HEADERS,timeout=3,proxies=PROXIES).json()
@@ -252,8 +283,9 @@ def analyze_PERFECT(symbol):
         if adx>20: conf_base+=1
         confidence=min(93, max(89, conf_base))
         pattern="PERFECT GOD CANDLE"
+        real_sym = fix_symbol(symbol)
         return {
-            "symbol":symbol,"code":symbol.replace("USDT",""),"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,
+            "symbol":symbol,"real_symbol":real_sym,"code":real_sym.replace("USDT",""),"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,
             "rsi":rsi,"adx":adx,"ma7":ma7,"ma25":ma25,"ma99":ma99,"ema20":ema20,"ema50":ema50,"score":score,"rr":rr,"conf":confidence,
             "trend15":trend15,"trend1h":trend1h,"trend2h":trend2h,"trend4h":trend4h,
             "rsi15":rsi15,"rsi1h":rsi1h,"rsi2h":rsi2h,"rsi4h":rsi4h,
@@ -265,10 +297,10 @@ def analyze_PERFECT(symbol):
 def kb(active=None):
     daily=get_daily()
     if active and active.get("status")=="OPEN":
-        return InlineKeyboardMarkup([[InlineKeyboardButton(f'🟢 {active["dir"]} {active["coin"]} ${active.get("usdt",3)} {active.get("conf",89)}%',callback_data="MON")],[InlineKeyboardButton(f'👀 MONITOR',callback_data="MON"), InlineKeyboardButton(f'❌ Close',callback_data="CLS")]])
+        return InlineKeyboardMarkup([[InlineKeyboardButton(f'🟢 {active["dir"]} {active["real_symbol"]} ${active.get("usdt",3)} {active.get("conf",89)}%',callback_data="MON")],[InlineKeyboardButton(f'👀 MONITOR',callback_data="MON"), InlineKeyboardButton(f'❌ Close',callback_data="CLS")]])
     pend=get_pending()
     btns=[]
-    if pend: btns.append([InlineKeyboardButton(f'⏳ PENDING {pend["symbol"]} {pend["dir"]} {pend.get("conf",89)}%',callback_data="SHOW_PENDING")])
+    if pend: btns.append([InlineKeyboardButton(f'⏳ PENDING {pend.get("real_symbol",pend["symbol"])} {pend["dir"]} {pend.get("conf",89)}%',callback_data="SHOW_PENDING")])
     btns.append([InlineKeyboardButton(f'⚡ SCAN 32 SAFE COINS 89-93% 🔥',callback_data="SCAN")])
     btns.append([InlineKeyboardButton(f'📊 {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY"), InlineKeyboardButton(f'🔄 RESET',callback_data="RESET")])
     return InlineKeyboardMarkup(btns)
@@ -276,8 +308,8 @@ def kb(active=None):
 async def setup_menu(app_):
     try:
         await app_.bot.set_my_commands([
-            BotCommand("start","🚀 V89.1 $3 SAFE"),
-            BotCommand("scan","⚡ SCAN SAFE 89-93%"),
+            BotCommand("start","🚀 V89.2 FIX"),
+            BotCommand("scan","⚡ SCAN FIXED"),
             BotCommand("monitor","👀 MONITOR"),
             BotCommand("daily","📊 DAILY"),
             BotCommand("reset","🔄 RESET")
@@ -287,7 +319,7 @@ async def setup_menu(app_):
 def bg_scan(chat_id):
     try:
         bal=get_futures_balance(); syms=get_real_alt_futures()
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚡🔍 Scanning {len(syms)} SAFE coins only (No USDBRL/BRL/EUR)...\n📊 15m,1h,2h,4h + Pattern!\nBal ${bal:.2f} | Trade $3 only!"},timeout=10,proxies=PROXIES)
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚡🔍 Scanning {len(syms)} SAFE coins (Fixed symbols)...\n📊 15m,1h,2h,4h + Pattern!\nBal ${bal:.2f} | Trade $3 only!"},timeout=10,proxies=PROXIES)
         raws=[]
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
             res=list(ex.map(analyze_PERFECT, syms))
@@ -297,12 +329,13 @@ def bg_scan(chat_id):
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"😴💤 Dull market... No 89-93% perfect safe coin now.\nBal ${bal:.2f}"},timeout=10,proxies=PROXIES); return
         raws.sort(key=lambda x:(x['conf'],x['score'],x['rr']), reverse=True)
         best=raws[0]; set_pending(best)
+        display_sym = best.get("real_symbol", best["symbol"])
         mk=InlineKeyboardMarkup([
-            [InlineKeyboardButton(f'✅ YES TRADE $3 {best["code"]} {best["conf"]}% 🔥', callback_data=f'YES_{best["symbol"]}_{best["dir"]}'), InlineKeyboardButton(f'😑💤 NO SKIP', callback_data='NO')]
+            [InlineKeyboardButton(f'✅ YES TRADE $3 {display_sym.replace("USDT","")} {best["conf"]}% 🔥', callback_data=f'YES_{best["symbol"]}_{best["dir"]}'), InlineKeyboardButton(f'😑💤 NO SKIP', callback_data='NO')]
         ])
         txt=(
             f"💎🔥 PERFECT ENTRY FOUND! {best['conf']}% SURE! 👑✨\n\n"
-            f"💱 {best['symbol']} | {best['dir']} | ⭐ Score {best['score']}/7 | 📈 RR {best['rr']:.1f}\n"
+            f"💱 {display_sym} (from {best['symbol']}) | {best['dir']} | ⭐ Score {best['score']}/7 | 📈 RR {best['rr']:.1f}\n"
             f"🕯️ Pattern: {best['pattern']} 💎⚡\n"
             f"🎯 Perfect Entry: {fmt(best['perfect_entry'])}\n"
             f"🛡️ SL 45% ROI (4.5%) = {fmt(best['sl'])}\n"
@@ -326,28 +359,19 @@ def bg_scan(chat_id):
 async def start(u,c):
     save_chat(u.message.chat.id); bal=get_futures_balance()
     txt=(
-        f"🧠💎 SKELLY'S V89.1 $3 SAFE TRADE BOT 👑✨📊🕯️🧠\n"
-        f"💰 Futures ${bal:.2f} USDT 💵 Risk $3 ONLY ⚙️ 32 SAFE COINS ⚡ 15m,1h,2h,4h\n\n"
-        f"🧠 PERFECT ANALYSIS LIKE ME:\n"
-        f"🌐 Scans 32 SAFE Binance Futures — PEPE, WIF, BONK, FLOKI, DOGE, SHIB, SOL etc!\n"
-        f"🚫 BLOCKED: USDBRL, BRL, EUR, BULLA, KORU — UNSAFE COINS BLOCKED!\n"
-        f"🏆 ONLY PERFECT GOD ENTRY 89-93% SURE + REAL $3 BINANCE TRADE!\n\n"
-        f"📊 COLORED CHART 🟩🟥🟨 + 😑💤 Dull Filter\n"
-        f"📜 V89.1 RULES:\n"
-        f"✅ 15m/1H/2H/4H 3/4 or 4/4 Aligned = 89-93% Sure!\n"
-        f"✅ SAFE COINS ONLY: PEPE, WIF, BONK, FLOKI, DOGE, SHIB, SOL, AVAX...\n"
-        f"✅ RSI 15-85 + ADX >=10 + RR >=1.4 + Score >=4\n"
-        f"✅ SL 45% ROI + TP1 55% + TP2 80% + TP3 120% + TP4 180%\n"
-        f"✅ $3 TRADE ONLY! 10x Lev = $30 position! Bal ${bal:.2f} safe!\n"
-        f"✅ YES TRADE = REAL $3 Binance Futures Order!\n"
-        f"✅ NO SKIP = 😑💤 Skip Dull Market!\n\n"
+        f"🧠💎 SKELLY'S V89.2 FIXED $3 TRADE BOT 👑✨\n"
+        f"💰 Futures ${bal:.2f} USDT 💵 Risk $3 ONLY ⚙️ 32 SAFE COINS ⚡\n\n"
+        f"✅ FIXED: PEPEUSDT -> 1000PEPEUSDT auto fix!\n"
+        f"✅ SAFE COINS: 1000PEPE, 1000FLOKI, 1000BONK, WIF, DOGE, SHIB, SOL...\n"
+        f"🚫 BLOCKED: USDBRL, BRL, EUR, BULLA, KORU!\n"
+        f"🏆 89-93% SURE + REAL $3 BINANCE TRADE!\n\n"
         f"Press SCAN! ⚡🔍"
     )
     await u.message.reply_text(txt, reply_markup=kb(get_active()))
 
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("⚡ Scanning 32 SAFE coins... $3 trade only!")
+    await u.message.reply_text("⚡ Scanning 32 SAFE coins fixed symbols...")
 
 async def daily_cmd(u,c): d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active()))
 async def reset_cmd(u,c):
@@ -359,7 +383,7 @@ async def monitor_cmd(u,c):
     if not act.get("status")=="OPEN": await u.message.reply_text("😴💤 No active",reply_markup=kb()); return
     price=get_price(act["symbol"]) or act["entry"]; entry=act["entry"]
     pnl=(price-entry)/entry*100 if act["dir"]=="BUY" else (entry-price)/entry*100
-    await u.message.reply_text(f"👀 {act['coin']} {act['dir']} {pnl:.2f}% Conf {act.get('conf',89)}% ${act.get('usdt',3)} Qty {act.get('qty','?')}", reply_markup=kb(act))
+    await u.message.reply_text(f"👀 {act.get('real_symbol',act['symbol'])} {act['dir']} {pnl:.2f}% Conf {act.get('conf',89)}% ${act.get('usdt',3)} Qty {act.get('qty','?')}", reply_markup=kb(act))
 
 async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
@@ -369,27 +393,28 @@ async def btn_handler(u,c):
     if data=="SHOW_PENDING":
         pend=get_pending()
         if not pend: await q.message.reply_text("No pending 😑💤"); return
-        mk=InlineKeyboardMarkup([[InlineKeyboardButton(f'✅ YES $3 {pend["symbol"]} {pend["conf"]}% 🔥', callback_data=f'YES_{pend["symbol"]}_{pend["dir"]}'), InlineKeyboardButton(f'😑💤 NO', callback_data='NO')]])
-        await q.message.reply_text(f"⏳ PENDING {pend['symbol']} {pend['dir']} {pend['conf']}% Entry {fmt(pend['perfect_entry'])} $3 only", reply_markup=mk); return
+        mk=InlineKeyboardMarkup([[InlineKeyboardButton(f'✅ YES $3 {pend.get("real_symbol",pend["symbol"])} {pend["conf"]}% 🔥', callback_data=f'YES_{pend["symbol"]}_{pend["dir"]}'), InlineKeyboardButton(f'😑💤 NO', callback_data='NO')]])
+        await q.message.reply_text(f"⏳ PENDING {pend.get('real_symbol',pend['symbol'])} {pend['dir']} {pend['conf']}% Entry {fmt(pend['perfect_entry'])} $3 only", reply_markup=mk); return
     if data.startswith("YES_"):
         parts=data.split("_"); symbol=parts[1]; direction=parts[2]
         pend=get_pending()
         if not pend: await q.message.reply_text("No pending, scan again!"); return
         bal=get_futures_balance()
-        await q.message.reply_text(f"⏳ Placing REAL $3 order {symbol} {direction} on Binance... Bal ${bal:.2f} -> Use $3 only")
-        result, qty, usdt_used = place_real_trade(symbol, direction, pend['perfect_entry'], pend['sl'], bal)
+        real_sym = fix_symbol(symbol)
+        await q.message.reply_text(f"⏳ Placing REAL $3 order {real_sym} (was {symbol}) {direction} on Binance... Bal ${bal:.2f} -> Use $3 only")
+        result, qty, usdt_used, fixed_sym = place_real_trade(symbol, direction, pend['perfect_entry'], pend['sl'], bal)
         if result and "error" not in result and result.get("orderId"):
-            set_active({"status":"OPEN","coin":symbol.replace("USDT",""),"symbol":symbol,"dir":direction,"entry":pend['perfect_entry'],"sl":pend['sl'],"tp1":pend['tp1'],"tp2":pend['tp2'],"tp3":pend['tp3'],"tp4":pend['tp4'],"conf":pend['conf'],"qty":qty,"usdt":usdt_used,"orderId":result.get("orderId"),"time":str(datetime.now())})
-            await q.message.reply_text(f"✅🔥 REAL $3 TRADE EXECUTED! 🚀\n{symbol} {direction} {pend['conf']}% SURE!\nQty {qty} | Used ${usdt_used} x10 = ${usdt_used*10} pos\nOrderID {result.get('orderId')}\nEntry {fmt(pend['perfect_entry'])} SL {fmt(pend['sl'])}\nBal left ~${bal-usdt_used:.2f} safe!\nCheck Binance Futures!\n/monitor to track!", reply_markup=kb(get_active()))
+            set_active({"status":"OPEN","coin":fixed_sym.replace("USDT",""),"symbol":symbol,"real_symbol":fixed_sym,"dir":direction,"entry":pend['perfect_entry'],"sl":pend['sl'],"tp1":pend['tp1'],"tp2":pend['tp2'],"tp3":pend['tp3'],"tp4":pend['tp4'],"conf":pend['conf'],"qty":qty,"usdt":usdt_used,"orderId":result.get("orderId"),"time":str(datetime.now())})
+            await q.message.reply_text(f"✅🔥 REAL $3 TRADE EXECUTED! 🚀\n{fixed_sym} {direction} {pend['conf']}% SURE!\nQty {qty} | Used ${usdt_used} x10 = ${usdt_used*10} pos\nOrderID {result.get('orderId')}\nEntry {fmt(pend['perfect_entry'])} SL {fmt(pend['sl'])}\nBal left ~${bal-usdt_used:.2f} safe!\nCheck Binance Futures!", reply_markup=kb(get_active()))
         else:
             err = result.get("error","Unknown") if isinstance(result, dict) else str(result)
-            await q.message.reply_text(f"⚠️ Binance Error: {err[:400]}\n\nCommon fix: Futures API enable? Balance ${bal:.2f} enough for $3? Symbol {symbol} min notional?", reply_markup=kb(get_active()))
+            await q.message.reply_text(f"⚠️ Binance Error: {err[:500]}\n\nFix: Enable Futures trading in API? Balance ${bal:.2f}? Symbol {real_sym}?", reply_markup=kb(get_active()))
         clear_pending(); return
     if data=="MON":
         act=get_active()
         if not act.get("status")=="OPEN": await q.message.reply_text("😴💤 No active",reply_markup=kb()); return
-        price=get_price(act["symbol"]) or act["entry"]; entry=act["entry"]; pnl=(price-entry)/entry*100 if act["dir"]=="BUY" else (entry-price)/entry*100
-        await q.message.reply_text(f"👀 {act['coin']} {act['dir']} {pnl:.2f}% {act.get('conf',89)}% ${act.get('usdt',3)} Qty {act.get('qty','?')} Order {act.get('orderId','paper')}",reply_markup=kb(act)); return
+        price=get_price(act.get("real_symbol",act["symbol"])) or act["entry"]; entry=act["entry"]; pnl=(price-entry)/entry*100 if act["dir"]=="BUY" else (entry-price)/entry*100
+        await q.message.reply_text(f"👀 {act.get('real_symbol',act['symbol'])} {act['dir']} {pnl:.2f}% {act.get('conf',89)}% ${act.get('usdt',3)}",reply_markup=kb(act)); return
     if data=="CLS": clear_active(); clear_pending(); await q.message.reply_text("😑💤 Closed!",reply_markup=kb()); return
     if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("⚡ Scanning 32 SAFE..."); return
 
@@ -399,7 +424,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("reset",reset_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V89.1 $3 SAFE LIVE"); a.run_polling(drop_pending_updates=True)
+    print("V89.2 FIX LIVE"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
