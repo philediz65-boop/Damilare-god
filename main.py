@@ -18,7 +18,7 @@ DAILY_FILE = f"{DATA_DIR}/daily.json"
 CHAT_FILE = f"{DATA_DIR}/chat.json"
 PENDING_FILE = f"{DATA_DIR}/pending.json"
 CACHE = {}; LOCK = threading.Lock(); CACHE_LOCK = threading.Lock()
-HEADERS = {"User-Agent":"SKELLY-V90.2.1-FIXED"}
+HEADERS = {"User-Agent":"SKELLY-V96-SECRET"}
 PROXIES = {"http": BINANCE_PROXY, "https": BINANCE_PROXY} if BINANCE_PROXY else None
 
 SYMBOL_FIX = {
@@ -58,7 +58,7 @@ def get_futures_balance():
                 except: pass
     return 7.03
 
-def set_leverage(symbol, lev=10):
+def set_leverage(symbol, lev=3):
     symbol = fix_symbol(symbol)
     return binance_signed_request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": lev})
 
@@ -108,33 +108,36 @@ def place_sl_tp_order(symbol, side, stop_price):
 def place_real_trade(symbol, direction, entry_price, sl, tp1, bal):
     try:
         real_symbol = fix_symbol(symbol)
-        print(f"Fix symbol {symbol} -> {real_symbol}")
-        set_leverage(real_symbol, 10)
+        set_leverage(real_symbol, 3)
         minQty, step = get_symbol_filters(real_symbol)
         if minQty is None:
             minQty, step = 1.0, 1.0
+        # SECRET: 0.5% risk + 3x leverage
         usdt_to_use = 3.0
-        if bal < 3.5:
+        if bal >= 20:
+            usdt_to_use = round(bal * 0.005 * 3, 2)
+            if usdt_to_use < 3: usdt_to_use = 3.0
+            if usdt_to_use > 15: usdt_to_use = 15.0
+        else:
             usdt_to_use = round(bal * 0.45, 2)
             if usdt_to_use < 1: usdt_to_use = 1.0
-        qty = usdt_to_use * 10 / entry_price
+        qty = usdt_to_use * 3 / entry_price
         precision = int(round(-math.log10(step),0)) if step<1 else 0
         if precision<0: precision=0
         qty = math.floor(qty / step) * step
         qty = round(qty, precision)
         if qty < minQty: qty = minQty
         side = "BUY" if direction=="BUY" else "SELL"
-        print(f"Placing REAL $3 TRADE: {side} {real_symbol} qty {qty} @ {entry_price} = ${usdt_to_use} x10")
+        print(f"REAL TRADE 3x: {side} {real_symbol} qty {qty}")
         result = place_real_futures_order(real_symbol, side, qty)
         if result and "Invalid symbol" in str(result):
             alt = "PEPEUSDT" if "1000PEPE" in real_symbol else real_symbol
-            print(f"Retrying with {alt}")
             result = place_real_futures_order(alt, side, qty)
         if result and result.get("orderId"):
             time.sleep(0.6)
             close_side = "SELL" if direction=="BUY" else "BUY"
             sl_res = place_sl_tp_order(real_symbol, close_side, sl)
-            print(f"SL set result: {sl_res}")
+            print(f"SL set: {sl_res}")
         return result, qty, usdt_to_use, real_symbol
     except Exception as e:
         return {"error": str(e)}, 0, 0, symbol
@@ -175,9 +178,9 @@ def clear_pending(): save_json(PENDING_FILE,{})
 def save_chat(cid): save_json(CHAT_FILE,{"id":cid})
 
 @app.get("/")
-def home(): return f"V90.2.1 FIXED Bal ${get_futures_balance():.2f}",200
+def home(): return f"V96 SECRET 3x Bal ${get_futures_balance():.2f}",200
 @app.get("/health")
-def health(): return "OK V90.2.1 FIXED",200
+def health(): return "OK V96 SECRET",200
 
 def fmt(v):
     try:
@@ -293,57 +296,111 @@ def make_colored_chart(klines):
 
 def analyze_PERFECT(symbol):
     try:
-        # FIXED: YOU ASKED FOR 1H,3H,4H - NOW WE USE IT!
-        k1h=get_klines(symbol,"1h"); k3h=get_klines(symbol,"3h"); k4h=get_klines(symbol,"4h")
-        if len(k1h)<90 or len(k3h)<70 or len(k4h)<70: return None
-        c1h=[k["c"] for k in k1h]; c3h=[k["c"] for k in k3h]; c4h=[k["c"] for k in k4h]
-        
-        rsi1h_series=rsi_series(c1h,14); rsi3h_series=rsi_series(c3h,14); rsi4h_series=rsi_series(c4h,14)
-        rsi1h=rsi1h_series[-1]; rsi3h=rsi3h_series[-1]; rsi4h=rsi4h_series[-1]
+        # SECRET FIX: 4H + 6H MUST AGREE + 1H SWEEP/BOS/FVG
+        k1h=get_klines(symbol,"1h")
+        k4h=get_klines(symbol,"4h")
+        k6h=get_klines(symbol,"6h")
+        if len(k1h)<90 or len(k4h)<70 or len(k6h)<70:
+            return None
+        c1h=[k["c"] for k in k1h]
+        c4h=[k["c"] for k in k4h]
+        c6h=[k["c"] for k in k6h]
+        h1h=[k["h"] for k in k1h]
+        l1h=[k["l"] for k in k1h]
+
+        rsi1h_series=rsi_series(c1h,14)
+        rsi4h_series=rsi_series(c4h,14)
+        rsi6h_series=rsi_series(c6h,14)
+        rsi1h=rsi1h_series[-1]
+        rsi4h=rsi4h_series[-1]
+        rsi6h=rsi6h_series[-1]
         price=get_price(symbol) or c1h[-1]
-        
-        trend1h,r1,e20_1,e50_1 = get_trend(k1h)
-        trend3h,r3,e20_3,e50_3 = get_trend(k3h)
-        trend4h,r4,e20_4,e50_4 = get_trend(k4h)
-        
-        # MUST ALL AGREE 1H/3H/4H
-        if not (trend1h==trend3h==trend4h and trend1h!="NEUTRAL"): return None
-        direction=trend1h
-        aligns=3
-        
+
+        trend1h,_,_,_ = get_trend(k1h)
+        trend4h,_,_,_ = get_trend(k4h)
+        trend6h,_,_,_ = get_trend(k6h)
+
+        # CORE SECRET: 4H AND 6H MUST AGREE
+        if not (trend4h == trend6h and trend4h != "NEUTRAL"):
+            return None
+        # 1H must also align OR at least not opposite
+        if trend1h != "NEUTRAL" and trend1h != trend4h:
+            return None
+        direction=trend4h
+
         is_meme = any(x in symbol for x in ["1000PEPE","1000BONK","1000FLOKI","BONK","PEPE","WIF","FLOKI","SHIB","MEME","BOME"])
-        
-        # RSI FILTER FOR ALL 3 TF - BLOCK OVERBOUGHT TOP!
+
+        # RSI FILTER 4H/6H
         if direction=="BUY":
             if is_meme:
-                if not (28 <= rsi1h <= 62 and 28 <= rsi3h <= 62 and 30 <= rsi4h <= 65): return None
-                if rsi1h > 65 or rsi3h > 66 or rsi4h > 67: return None
+                if not (28 <= rsi1h <= 62 and 30 <= rsi4h <= 65 and 30 <= rsi6h <= 65):
+                    return None
+                if rsi1h > 65 or rsi4h > 67 or rsi6h > 67:
+                    return None
             else:
-                if not (30 <= rsi1h <= 67 and 30 <= rsi3h <= 67 and 32 <= rsi4h <= 68): return None
-                if rsi1h > 70 or rsi3h > 70 or rsi4h > 71: return None
-            if rsi1h_series[-1] < rsi1h_series[-3]: return None
-            if rsi3h_series[-1] < rsi3h_series[-3]: return None
+                if not (30 <= rsi1h <= 67 and 32 <= rsi4h <= 68 and 32 <= rsi6h <= 68):
+                    return None
+                if rsi1h > 70 or rsi4h > 71 or rsi6h > 71:
+                    return None
+            if rsi1h_series[-1] < rsi1h_series[-3]:
+                return None
         else:
-            if rsi1h < 28: return None
-            if rsi1h_series[-1] > rsi1h_series[-3]: return None
-        
-        # Volume
+            if rsi1h < 28:
+                return None
+            if rsi1h_series[-1] > rsi1h_series[-3]:
+                return None
+
+        # SECRET: LIQUIDITY SWEEP CHECK
+        prev_high = max(h1h[-21:-1])
+        prev_low = min(l1h[-21:-1])
+        curr_close = c1h[-1]
+        prev_low_wick = l1h[-2]
+        prev_high_wick = h1h[-2]
+
+        sweep_bull = prev_low_wick < prev_low and curr_close > prev_low
+        sweep_bear = prev_high_wick > prev_high and curr_close < prev_high
+
+        if direction=="BUY" and not sweep_bull:
+            return None
+        if direction=="SELL" and not sweep_bear:
+            return None
+
+        # SECRET: BOS CHECK
+        bos_bull = curr_close > prev_high
+        bos_bear = curr_close < prev_low
+        if direction=="BUY" and not bos_bull:
+            return None
+        if direction=="SELL" and not bos_bear:
+            return None
+
+        # SECRET: FVG CHECK
+        fvg = False
+        if l1h[-1] > h1h[-3]:
+            fvg = True
+        if h1h[-1] < l1h[-3]:
+            fvg = True
+        if not fvg:
+            return None
+
         vol=[k["v"] for k in k1h]; avg_vol=sma(vol,20)
-        if vol[-1] < avg_vol*0.6: return None
-        
+        if vol[-1] < avg_vol*0.65:
+            return None
+
         ma7=sma(c1h,7); ma25=sma(c1h,25); ma99=sma(c1h,99) if len(c1h)>=99 else ema(c1h,99)
-        adx1h=adx_calc(k1h); adx3h=adx_calc(k3h); atr=atr_calc(k1h,14)
-        ema20=e20_1; ema50=e50_1
-        if adx1h<16 or adx3h<15: return None
-        
+        adx1h=adx_calc(k1h); adx4h=adx_calc(k4h)
+        ema20=ema(c1h,20); ema50=ema(c1h,50)
+        atr=atr_calc(k1h,14)
+        if adx1h<18 or adx4h<16:
+            return None
+
         score=0
-        if aligns==3: score+=3
+        if trend4h==trend6h: score+=3
         if 38 < rsi1h < 60: score+=2
         if adx1h>22: score+=1
         if vol[-1]>avg_vol: score+=1
-        if score<5: return None
-        
-        # FIXED WIDE SL 6.5% / 8% MEME - NO MORE 4% CLOSE!
+        if score<5:
+            return None
+
         buf=atr*2.0 if atr else price*0.016
         max_sl=0.08 if is_meme else 0.065
         min_sl=0.035
@@ -359,27 +416,28 @@ def analyze_PERFECT(symbol):
             if pct>max_sl: sl=price*(1+max_sl)
             if pct<min_sl: sl=price*(1+min_sl)
             tp1=price-(sl-price)*1.0; tp2=price-(sl-price)*1.9; tp3=price-(sl-price)*3.0; tp4=price-(sl-price)*4.5
-        
+
         rr=abs(tp2-price)/abs(price-sl) if abs(price-sl)>0 else 0
         if rr<1.7: return None
-        
+
         conf_base=89
-        if aligns==3: conf_base+=2
+        if trend4h==trend6h: conf_base+=3
         if adx1h>24: conf_base+=1
         if 40<rsi1h<58: conf_base+=2
         confidence=min(94, max(89, conf_base))
-        pattern=f"MTF {rsi1h:.0f}/{rsi3h:.0f}/{rsi4h:.0f} GOD"
+        pattern=f"4H+6H {rsi4h:.0f}/{rsi6h:.0f} + Sweep+BOS+FVG"
         real_sym = fix_symbol(symbol)
         return {
             "symbol":symbol,"real_symbol":real_sym,"code":real_sym.replace("USDT",""),"dir":direction,"entry":price,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,
             "rsi":rsi1h,"adx":adx1h,"ma7":ma7,"ma25":ma25,"ma99":ma99,"ema20":ema20,"ema50":ema50,"score":score,"rr":rr,"conf":confidence,
-            "trend1h":trend1h,"trend3h":trend3h,"trend4h":trend4h,
-            "rsi1h":rsi1h,"rsi3h":rsi3h,"rsi4h":rsi4h,
-            "chart1h":make_colored_chart(k1h),"chart3h":make_colored_chart(k3h),"chart4h":make_colored_chart(k4h),
-            "pattern":pattern,"perfect_entry": price, "sl_pct":max_sl, "vol": vol[-1]/avg_vol if avg_vol else 1
+            "trend1h":trend1h,"trend4h":trend4h,"trend6h":trend6h,
+            "rsi1h":rsi1h,"rsi4h":rsi4h,"rsi6h":rsi6h,
+            "chart1h":make_colored_chart(k1h),"chart4h":make_colored_chart(k4h),"chart6h":make_colored_chart(k6h),
+            "pattern":pattern,"perfect_entry": price, "sl_pct":max_sl, "vol": vol[-1]/avg_vol if avg_vol else 1,
+            "sweep": "Bear Trap" if direction=="BUY" else "Bull Trap"
         }
     except Exception as e:
-        print(f"RSI Filter error {symbol}: {e}")
+        print(f"SECRET Filter error {symbol}: {e}")
         return None
 
 def kb(active=None):
@@ -389,15 +447,15 @@ def kb(active=None):
     pend=get_pending()
     btns=[]
     if pend: btns.append([InlineKeyboardButton(f'⏳ PENDING {pend.get("real_symbol",pend["symbol"])} {pend["dir"]} {pend.get("conf",89)}%',callback_data="SHOW_PENDING")])
-    btns.append([InlineKeyboardButton(f'⚡ SCAN 1H/3H/4H MTF GOD 🔥',callback_data="SCAN")])
+    btns.append([InlineKeyboardButton(f'⚡ SCAN 4H+6H SECRET 🔥',callback_data="SCAN")])
     btns.append([InlineKeyboardButton(f'📊 {daily["wins"]}W/{daily["losses"]}L ${daily["pnl"]:.2f}',callback_data="DAILY"), InlineKeyboardButton(f'🔄 RESET',callback_data="RESET")])
     return InlineKeyboardMarkup(btns)
 
 async def setup_menu(app_):
     try:
         await app_.bot.set_my_commands([
-            BotCommand("start","🚀 V90.2.1 FIXED MTF"),
-            BotCommand("scan","⚡ SCAN MTF"),
+            BotCommand("start","🚀 V96 SECRET 3x"),
+            BotCommand("scan","⚡ SCAN SECRET"),
             BotCommand("monitor","👀 MONITOR"),
             BotCommand("daily","📊 DAILY"),
             BotCommand("reset","🔄 RESET")
@@ -407,35 +465,35 @@ async def setup_menu(app_):
 def bg_scan(chat_id):
     try:
         bal=get_futures_balance(); syms=get_real_alt_futures()
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚡🔍 V90.2.1 FIXED MTF Scanning {len(syms)} coins...\n📊 Check 1H/3H/4H RSI + EMA200 + MACD + ADX + VOL + WIDE SL 6.5%/8%!\nBal ${bal:.2f}"},timeout=10,proxies=PROXIES)
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"⚡🔍 V96 SECRET Scanning {len(syms)} coins...\n📊 4H+6H Agree + 1H Sweep+BOS+FVG + 3x Lev\nBal ${bal:.2f}"},timeout=10,proxies=PROXIES)
         raws=[]
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
             res=list(ex.map(analyze_PERFECT, syms))
         for t in res:
             if t: raws.append(t)
         if not raws:
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"😑💤 Dull market... 1H/3H/4H not align. Safe! No trade.\nBal ${bal:.2f}"},timeout=10,proxies=PROXIES); return
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":f"😑💤 No secret setup. 4H+6H no agree or no Sweep/BOS/FVG. Patient = profit 🛡️\nBal ${bal:.2f}"},timeout=10,proxies=PROXIES); return
         raws.sort(key=lambda x:(x['conf'],x['score'],x['rr']), reverse=True)
         best=raws[0]; set_pending(best)
         display_sym = best.get("real_symbol", best["symbol"])
         mk=InlineKeyboardMarkup([
-            [InlineKeyboardButton(f'✅ YES TRADE $3 {display_sym.replace("USDT","")} {best["conf"]}%', callback_data=f'YES_{best["symbol"]}_{best["dir"]}'), InlineKeyboardButton(f'😑💤 NO SKIP', callback_data='NO')]
+            [InlineKeyboardButton(f'✅ YES TRADE 3x {display_sym.replace("USDT","")} {best["conf"]}%', callback_data=f'YES_{best["symbol"]}_{best["dir"]}'), InlineKeyboardButton(f'😑💤 NO SKIP', callback_data='NO')]
         ])
         txt=(
-            f"💎🔥 MTF GOD ENTRY! {best['conf']}% SURE! 👑\n\n"
+            f"💎🔥 SECRET ENTRY! {best['conf']}% SURE! 👑\n\n"
             f"💱 {display_sym} | {best['dir']} | ⭐ Score {best['score']}/8 | 📈 RR {best['rr']:.1f} VOL x{best['vol']:.1f}\n"
-            f"🕯️ Pattern: {best['pattern']} 💎\n"
+            f"🕯️ Pattern: {best['pattern']} + {best['sweep']} 💎\n"
             f"🎯 Entry: {fmt(best['perfect_entry'])}\n"
             f"🛡️ SL {int(best['sl_pct']*100)}% Wide = {fmt(best['sl'])} Auto!\n"
-            f"💰 TP1 = {fmt(best['tp1'])} | TP2 = {fmt(best['tp2'])}\n"
+            f"💰 TP1 = {fmt(best['tp1'])} BE + 50% | TP2 = {fmt(best['tp2'])} 25%\n"
             f"💰 TP3 = {fmt(best['tp3'])} | TP4 = {fmt(best['tp4'])} 🏆\n\n"
-            f"📊 1H: {best['chart1h']} Trend: {best['trend1h']} RSI {best['rsi1h']:.0f} ✅\n"
-            f"📊 3H: {best['chart3h']} Trend: {best['trend3h']} RSI {best['rsi3h']:.0f}\n"
-            f"📊 4H: {best['chart4h']} Trend: {best['trend4h']} RSI {best['rsi4h']:.0f}\n\n"
+            f"📊 1H: {best['chart1h']} RSI {best['rsi1h']:.0f} {best['trend1h']}\n"
+            f"📊 4H: {best['chart4h']} RSI {best['rsi4h']:.0f} {best['trend4h']} ✅\n"
+            f"📊 6H: {best['chart6h']} RSI {best['rsi6h']:.0f} {best['trend6h']} ✅\n\n"
             f"📈 MA7 {fmt(best['ma7'])} | MA25 {fmt(best['ma25'])} | MA99 {fmt(best['ma99'])}\n"
-            f"💪 ADX {best['adx']:.0f} | EMA20 {fmt(best['ema20'])} EMA50 {fmt(best['ema50'])}\n"
-            f"💰 Bal ${bal:.2f} | $3 only | {best['conf']}% SURE! MTF!\n\n"
-            f"👉 REAL $3 MTF TRADE? YES!"
+            f"💪 ADX {best['adx']:.0f} | LEV 3x ONLY 🛡️\n"
+            f"💰 Bal ${bal:.2f} | Risk 0.5% | {best['conf']}% SURE!\n\n"
+            f"👉 REAL 3x SECRET TRADE? YES!"
         )
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",json={"chat_id":chat_id,"text":txt, "reply_markup": mk.to_dict()},timeout=10,proxies=PROXIES)
     except Exception as e: print(f"SCAN ERR {e}")
@@ -443,12 +501,12 @@ def bg_scan(chat_id):
 async def start(u,c):
     save_chat(u.message.chat.id); bal=get_futures_balance()
     txt=(
-        f"🧠💎 SKELLY'S V90.2.1 FIXED MTF 👑\n"
-        f"💰 Futures ${bal:.2f} USDT | $3 ONLY + Wide SL!\n\n"
-        f"✅ FIXED: 1H/3H/4H Must Agree!\n"
-        f"✅ RSI + EMA200 + MACD + ADX + VOL!\n"
-        f"✅ SL Wide 6.5%/8% - Wick Safe!\n"
-        f"✅ Block Reversal - No More BONK Top!\n"
+        f"🧠💎 SKELLY'S V96 SECRET 3x 👑\n"
+        f"💰 Futures ${bal:.2f} | 3x Lev + 0.5% Risk!\n\n"
+        f"✅ 4H+6H MUST AGREE!\n"
+        f"✅ 1H Sweep + BOS + FVG!\n"
+        f"✅ SL Wide 6.5%/8% Wick Safe!\n"
+        f"✅ Block Top - No BONK trap!\n"
         f"🏆 89-94% SURE!\n\n"
         f"Press SCAN! ⚡"
     )
@@ -456,13 +514,13 @@ async def start(u,c):
 
 async def scan_cmd(u,c):
     save_chat(u.message.chat.id); threading.Thread(target=bg_scan,args=(u.message.chat.id,),daemon=True).start()
-    await u.message.reply_text("⚡ V90.2.1 MTF Scanning 1H/3H/4H...")
+    await u.message.reply_text("⚡ V96 SECRET Scanning 4H+6H...")
 
 async def daily_cmd(u,c): d=get_daily(); await u.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active()))
 async def reset_cmd(u,c):
     save_json(DAILY_FILE, {"date":str(date.today()),"wins":0,"losses":0,"trades":0,"pnl":0.0})
     clear_active(); clear_pending()
-    await u.message.reply_text("🔄 RESET DONE! V90.2.1 FIXED Ready!", reply_markup=kb(get_active()))
+    await u.message.reply_text("🔄 RESET DONE! V96 SECRET Ready!", reply_markup=kb(get_active()))
 async def monitor_cmd(u,c):
     act=get_active()
     if not act.get("status")=="OPEN": await u.message.reply_text("😴💤 No active",reply_markup=kb()); return
@@ -474,23 +532,23 @@ async def btn_handler(u,c):
     q=u.callback_query; await q.answer(); data=q.data
     if data=="DAILY": d=get_daily(); await q.message.reply_text(f"📊 {d['wins']}W/{d['losses']}L ${d['pnl']:.2f}",reply_markup=kb(get_active())); return
     if data=="RESET": save_json(DAILY_FILE, {"date":str(date.today()),"wins":0,"losses":0,"trades":0,"pnl":0.0}); clear_active(); clear_pending(); await q.message.reply_text("🔄 RESET!", reply_markup=kb(get_active())); return
-    if data=="NO": clear_pending(); await q.message.reply_text("😑💤 Dull skipped! MTF protected you!", reply_markup=kb(get_active())); return
+    if data=="NO": clear_pending(); await q.message.reply_text("😑💤 Skipped! Secret protected you! 🛡️", reply_markup=kb(get_active())); return
     if data=="SHOW_PENDING":
         pend=get_pending()
         if not pend: await q.message.reply_text("No pending 😑💤"); return
-        mk=InlineKeyboardMarkup([[InlineKeyboardButton(f'✅ YES $3 {pend.get("real_symbol",pend["symbol"])} {pend["conf"]}%', callback_data=f'YES_{pend["symbol"]}_{pend["dir"]}'), InlineKeyboardButton(f'😑💤 NO', callback_data='NO')]])
-        await q.message.reply_text(f"⏳ PENDING {pend.get('real_symbol',pend['symbol'])} {pend['dir']} {pend['conf']}% RSI {pend['rsi1h']:.0f}/{pend['rsi3h']:.0f}/{pend['rsi4h']:.0f} Entry {fmt(pend['perfect_entry'])} $3 only", reply_markup=mk); return
+        mk=InlineKeyboardMarkup([[InlineKeyboardButton(f'✅ YES 3x {pend.get("real_symbol",pend["symbol"])} {pend["conf"]}%', callback_data=f'YES_{pend["symbol"]}_{pend["dir"]}'), InlineKeyboardButton(f'😑💤 NO', callback_data='NO')]])
+        await q.message.reply_text(f"⏳ PENDING {pend.get('real_symbol',pend['symbol'])} {pend['dir']} {pend['conf']}% RSI {pend['rsi1h']:.0f}/{pend['rsi4h']:.0f}/{pend['rsi6h']:.0f} Entry {fmt(pend['perfect_entry'])} Sweep {pend['sweep']} 3x only", reply_markup=mk); return
     if data.startswith("YES_"):
         parts=data.split("_"); symbol=parts[1]; direction=parts[2]
         pend=get_pending()
         if not pend: await q.message.reply_text("No pending, scan again!"); return
         bal=get_futures_balance()
         real_sym = fix_symbol(symbol)
-        await q.message.reply_text(f"⏳ Placing REAL $3 order {real_sym} RSI {pend['rsi1h']:.0f}/{pend['rsi3h']:.0f}/{pend['rsi4h']:.0f} {direction} + Auto SL Wide {fmt(pend['sl'])}... Bal ${bal:.2f}")
+        await q.message.reply_text(f"⏳ Placing REAL 3x order {real_sym} RSI {pend['rsi1h']:.0f}/{pend['rsi4h']:.0f}/{pend['rsi6h']:.0f} {direction} + Auto SL Wide {fmt(pend['sl'])}... Bal ${bal:.2f}")
         result, qty, usdt_used, fixed_sym = place_real_trade(symbol, direction, pend['perfect_entry'], pend['sl'], pend['tp1'], bal)
         if result and "error" not in result and result.get("orderId"):
             set_active({"status":"OPEN","coin":fixed_sym.replace("USDT",""),"symbol":symbol,"real_symbol":fixed_sym,"dir":direction,"entry":pend['perfect_entry'],"sl":pend['sl'],"tp1":pend['tp1'],"tp2":pend['tp2'],"tp3":pend['tp3'],"tp4":pend['tp4'],"conf":pend['conf'],"qty":qty,"usdt":usdt_used,"orderId":result.get("orderId"),"time":str(datetime.now())})
-            await q.message.reply_text(f"✅🔥 REAL $3 MTF TRADE EXECUTED! 🚀\n{fixed_sym} {direction} {pend['conf']}% MTF AGREE!\nQty {qty} | Used ${usdt_used} x10 | SL Auto-Set Wide {fmt(pend['sl'])} {int(pend['sl_pct']*100)}%\nOrderID {result.get('orderId')}\nEntry {fmt(pend['perfect_entry'])} SL {fmt(pend['sl'])}\nBal left ~${bal-usdt_used:.2f} safe!\nCheck Binance Futures!", reply_markup=kb(get_active()))
+            await q.message.reply_text(f"✅🔥 REAL 3x SECRET TRADE! 🚀\n{fixed_sym} {direction} {pend['conf']}% 4H+6H!\nQty {qty} | Used ${usdt_used} x3 Lev | SL Wide {fmt(pend['sl'])} {int(pend['sl_pct']*100)}%\nOrderID {result.get('orderId')}\nEntry {fmt(pend['perfect_entry'])} TP1 BE 50% TP2 25%\nBal left ~${bal-usdt_used:.2f} safe!", reply_markup=kb(get_active()))
         else:
             err = result.get("error","Unknown") if isinstance(result, dict) else str(result)
             await q.message.reply_text(f"⚠️ Binance Error: {err[:500]}\n\nFix: Enable Futures trading in API? Balance ${bal:.2f}? Symbol {real_sym}?", reply_markup=kb(get_active()))
@@ -499,9 +557,9 @@ async def btn_handler(u,c):
         act=get_active()
         if not act.get("status")=="OPEN": await q.message.reply_text("😴💤 No active",reply_markup=kb()); return
         price=get_price(act.get("real_symbol",act["symbol"])) or act["entry"]; entry=act["entry"]; pnl=(price-entry)/entry*100 if act["dir"]=="BUY" else (entry-price)/entry*100
-        await q.message.reply_text(f"👀 {act.get('real_symbol',act['symbol'])} {act['dir']} {pnl:.2f}% {act.get('conf',89)}% MTF ${act.get('usdt',3)}",reply_markup=kb(act)); return
-    if data=="CLS": clear_active(); clear_pending(); await q.message.reply_text("😑💤 Closed! V90.2.1 FIXED",reply_markup=kb()); return
-    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("⚡ V90.2.1 FIXED Scanning..."); return
+        await q.message.reply_text(f"👀 {act.get('real_symbol',act['symbol'])} {act['dir']} {pnl:.2f}% {act.get('conf',89)}% 3x ${act.get('usdt',3)}",reply_markup=kb(act)); return
+    if data=="CLS": clear_active(); clear_pending(); await q.message.reply_text("😑💤 Closed! V96 SECRET",reply_markup=kb()); return
+    if data=="SCAN": threading.Thread(target=bg_scan,args=(q.message.chat.id,),daemon=True).start(); await q.message.reply_text("⚡ V96 SECRET Scanning 4H+6H..."); return
 
 def run_flask(): app.run(host="0.0.0.0",port=PORT)
 def run_bot():
@@ -509,7 +567,7 @@ def run_bot():
     a=ApplicationBuilder().token(BOT_TOKEN).post_init(setup_menu).build()
     a.add_handler(CommandHandler("start",start)); a.add_handler(CommandHandler("scan",scan_cmd)); a.add_handler(CommandHandler("monitor",monitor_cmd)); a.add_handler(CommandHandler("daily",daily_cmd)); a.add_handler(CommandHandler("reset",reset_cmd))
     a.add_handler(CallbackQueryHandler(btn_handler))
-    print("V90.2.1 FIXED LIVE"); a.run_polling(drop_pending_updates=True)
+    print("V96 SECRET LIVE"); a.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
     threading.Thread(target=run_flask,daemon=True).start()
